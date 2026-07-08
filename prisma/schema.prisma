@@ -1,0 +1,340 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum RoleName {
+  DEVELOPER
+  OWNER
+  KOORLAP
+  KASIR
+}
+
+enum PaymentMethod {
+  CASH
+  QRIS
+  GRABFOOD
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+model Role {
+  id          String    @id @default(uuid())
+  name        RoleName  @unique
+  description String?
+  users       User[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+}
+
+model User {
+  id           String        @id @default(uuid())
+  username     String        @unique
+  password     String
+  name         String
+  roleId       String
+  role         Role          @relation(fields: [roleId], references: [id])
+  status       String        @default("ACTIVE") // ACTIVE, INACTIVE
+  outlets      UserOutlet[]
+  transactions Transaction[]
+  shoppingLists        ShoppingList[]
+  expenses             Expense[]
+  revenues             Revenue[]
+  stockMovements       StockMovement[]
+  operationalMovements OperationalStockMovement[]
+  auditLogs            AuditLog[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
+}
+
+model Outlet {
+  id            String        @id @default(uuid())
+  name          String        @unique
+  address       String?
+  phone         String?
+  email         String?
+  status        String        @default("ACTIVE") // ACTIVE, INACTIVE
+  users         UserOutlet[]
+  stocks            Stock[]
+  operationalStocks OperationalStock[]
+  transactions      Transaction[]
+  shoppingLists     ShoppingList[]
+  expenses          Expense[]
+  revenues          Revenue[]
+  reports           Report[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+}
+
+model UserOutlet {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outletId  String
+  outlet    Outlet    @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  status    String    @default("ACTIVE") // ACTIVE, INACTIVE
+  products  Product[] @relation("CategoryToProduct")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model Product {
+  id                String            @id @default(uuid())
+  name              String
+  categoryId        String
+  category          Category          @relation("CategoryToProduct", fields: [categoryId], references: [id])
+  sku               String            @unique
+  barcode           String?
+  sellingPrice      Float
+  basePrice         Float             // Harga modal
+  image             String?           // Foto produk path/url
+  sortOrder         Int               @default(0) // Urutan tampilan di menu
+  status            String            @default("ACTIVE") // ACTIVE, INACTIVE
+  linkedProductId            String?
+  linkedProduct              Product?          @relation("ProductToProduct", fields: [linkedProductId], references: [id])
+  derivedProducts            Product[]         @relation("ProductToProduct")
+  linkedProductId2           String?
+  linkedProduct2             Product?          @relation("ProductToProduct2", fields: [linkedProductId2], references: [id])
+  derivedProducts2           Product[]         @relation("ProductToProduct2")
+  operationalStocks          ProductOperationalStock[]
+  stockDeductionQty          Int               @default(1)
+  stockDeductionQty2         Int               @default(1)
+  stocks            Stock[]
+  transactionItems  TransactionItem[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  deletedAt         DateTime?
+}
+
+model Stock {
+  id            String          @id @default(uuid())
+  productId     String
+  product       Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  outletId      String
+  outlet        Outlet          @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  initialStock  Int             @default(0)
+  stockIn       Int             @default(0)
+  stockOut      Int             @default(0)
+  sold          Int             @default(0)
+  quantity      Int             @default(0) // Current stock: (initialStock + stockIn - stockOut - sold)
+  minStock      Int             @default(5)
+  movements     StockMovement[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  deletedAt     DateTime?
+
+  @@unique([productId, outletId])
+}
+
+model StockMovement {
+  id           String            @id @default(uuid())
+  stockId      String
+  stock        Stock             @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  type         StockMovementType
+  quantity     Int
+  notes        String?
+  userId       String
+  user         User              @relation(fields: [userId], references: [id])
+  createdAt    DateTime          @default(now())
+  deletedAt    DateTime?
+}
+
+model Transaction {
+  id            String            @id @default(uuid())
+  invoiceNumber String            @unique // Auto-generated
+  outletId      String
+  outlet        Outlet            @relation(fields: [outletId], references: [id])
+  cashierId     String
+  cashier       User              @relation(fields: [cashierId], references: [id])
+  subtotal      Float
+  total         Float
+  paymentMethod PaymentMethod
+  notes         String?
+  items         TransactionItem[]
+  revenue       Revenue?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  deletedAt     DateTime?
+}
+
+model TransactionItem {
+  id            String      @id @default(uuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product     @relation(fields: [productId], references: [id])
+  quantity      Int
+  price         Float       // Selling price at transaction time
+  cost          Float       // Base price at transaction time
+  subtotal      Float
+  createdAt     DateTime    @default(now())
+  deletedAt     DateTime?
+}
+
+model ShoppingList {
+  id          String    @id @default(uuid())
+  date        DateTime  @default(now())
+  outletId    String
+  outlet      Outlet    @relation(fields: [outletId], references: [id])
+  itemName    String
+  supplier    String?
+  qty         Int
+  price       Float
+  total       Float
+  notes              String?
+  userId             String
+  user               User              @relation(fields: [userId], references: [id])
+  expense            Expense?
+  operationalStockId String?
+  operationalStock   OperationalStock? @relation(fields: [operationalStockId], references: [id])
+  createdAt          DateTime          @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+}
+
+model Expense {
+  id             String        @id @default(uuid())
+  outletId       String
+  outlet         Outlet        @relation(fields: [outletId], references: [id])
+  name           String
+  amount         Float
+  category       String        @default("OPERATIONAL")
+  date           DateTime      @default(now())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id])
+  shoppingListId String?       @unique
+  shoppingList   ShoppingList? @relation(fields: [shoppingListId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+}
+
+model Revenue {
+  id            String       @id @default(uuid())
+  outletId      String
+  outlet        Outlet       @relation(fields: [outletId], references: [id])
+  transactionId String?      @unique
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  amount        Float
+  method        PaymentMethod
+  date          DateTime     @default(now())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id])
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  deletedAt     DateTime?
+}
+
+model Report {
+  id             String    @id @default(uuid())
+  outletId       String
+  outlet         Outlet    @relation(fields: [outletId], references: [id])
+  date           DateTime  @default(now())
+  cashierId      String
+  totalSales     Float
+  totalCash      Float
+  totalQris      Float
+  totalGrabfood  Float
+  totalExpense   Float
+  grossMargin    Float
+  netProfit      Float
+  reportData     Json      // Stores full report layout matching custom spreadsheet A4
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+}
+
+model Setting {
+  id             String    @id @default(uuid())
+  storeName      String    @default("Cipak Jederrr POS")
+  logo           String?
+  phone          String?
+  email          String?
+  address        String?
+  operatingHours String?
+  smtpHost       String?
+  smtpPort       Int?
+  smtpUser       String?
+  smtpPassword   String?
+  prefixInvoice  String    @default("TRX")
+  tax            Float     @default(0.0) // Percentage
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String   // e.g. CREATE, UPDATE, DELETE, LOGIN
+  table     String
+  recordId  String
+  details   Json?
+  createdAt DateTime @default(now())
+}
+
+model OperationalStock {
+  id            String                     @id @default(uuid())
+  name          String
+  unit          String                     @default("pcs") // pcs, kg, liter, pack, etc.
+  outletId      String
+  outlet        Outlet                     @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  initialStock  Float                      @default(0)
+  stockIn       Float                      @default(0)
+  stockOut      Float                      @default(0)
+  quantity      Float                      @default(0)
+  minStock      Float                      @default(5)
+  qtyPerUnit    Int                        @default(1) // Isi per unit pembelian (misal: 1 pack = 50 pcs)
+  movements     OperationalStockMovement[]
+  shoppingLists ShoppingList[]
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
+  deletedAt     DateTime?
+
+  @@unique([name, outletId])
+}
+
+model OperationalStockMovement {
+  id                 String            @id @default(uuid())
+  operationalStockId String
+  operationalStock   OperationalStock  @relation(fields: [operationalStockId], references: [id], onDelete: Cascade)
+  type               StockMovementType
+  quantity           Float
+  notes              String?
+  userId             String
+  user               User              @relation(fields: [userId], references: [id])
+  createdAt          DateTime          @default(now())
+  deletedAt          DateTime?
+}
+
+model ProductOperationalStock {
+  id                    String   @id @default(uuid())
+  productId             String
+  product               Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  operationalStockName  String
+  deductionQty          Float    @default(1)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([productId, operationalStockName])
+}

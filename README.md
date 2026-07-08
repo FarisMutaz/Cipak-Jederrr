@@ -1,36 +1,78 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Cipak Jederrr! POS
 
-## Getting Started
+A Point of Sale (POS) system designed for managing outlets, products, stock, transactions, and finances of Cipak Jederrr.
 
-First, run the development server:
+---
 
+## 🚀 Fitur Utama
+- **Kasir (POS)**: Entri transaksi cepat dengan dukungan QRIS, Tunai, dan GrabFood.
+- **Dashboard & Analytics**: Metrik penjualan harian, grafik keuntungan kotor/bersih, dan indikator stok kritis.
+- **Keuangan (Kas & Ledger)**: Pencatatan otomatis pendapatan dari transaksi dan pengeluaran operasional.
+- **Stok & Inventori**: Manajemen stok real-time, riwayat pergerakan stok, dan peringatan stok minimum.
+- **Laporan Harian (A4)**: Cetak laporan penutupan harian berformat spreadsheet A4 dengan html2canvas & jsPDF.
+- **Manajemen Pengguna (RBAC)**: Pembatasan hak akses berbasis peran (Developer, Owner, Koorlap, Kasir).
+- **Utilitas Backup & Restore**: Ekspor dan impor data seluruh sistem dalam format JSON portable.
+
+---
+
+## 🛠️ Tech Stack
+- **Framework**: Next.js 15 (App Router)
+- **Database ORM**: Prisma Client
+- **Database**: PostgreSQL (dengan `@prisma/adapter-pg`)
+- **Autentikasi**: Auth.js / NextAuth (v5)
+- **Styling**: Tailwind CSS & Framer Motion
+- **Form Validation**: React Hook Form & Zod
+- **State Management**: TanStack React Query (v5)
+
+---
+
+## ⚙️ Cara Memulai & Setup
+
+### 1. Instalasi Dependensi
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Konfigurasi Environment Variables
+Buat berkas `.env` di direktori utama proyek dan tambahkan konfigurasi berikut:
+```env
+DATABASE_URL="postgres://postgres:postgres@localhost:51214/template1?sslmode=disable&connection_limit=10"
+AUTH_SECRET="gunakan_kunci_rahasia_acak_minimal_32_karakter"
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Jalankan Local Database (Prisma Dev)
+Proyek ini menggunakan **Prisma Postgres lokal** yang dijalankan melalui perintah berikut (**biarkan terminal ini tetap berjalan**):
+```bash
+npx prisma dev
+```
+Ini akan menjalankan database PostgreSQL lokal di port **51214** secara otomatis (tanpa perlu instalasi PostgreSQL manual atau Docker).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 4. Migrasi Schema & Seeding Data Awal
+Buka terminal baru, lalu jalankan:
+```bash
+npx prisma db push
+npx tsx prisma/seed.ts
+```
 
-## Learn More
+### 5. Menjalankan Server Pengembangan
+```bash
+npm run dev
+```
+Buka [http://localhost:3000](http://localhost:3000) di browser Anda.
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 🔐 Akun Login Default (Hasil Seeding)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Gunakan daftar akun berikut untuk menguji sistem berdasarkan masing-masing tingkat akses (Role):
 
-## Deploy on Vercel
+| No | Peran (Role) | Email | Password | Deskripsi / Cakupan (Scope) |
+|---|---|---|---|---|
+| 1 | **Developer** | `dev@cipak.com` | `Password123!` | Akses penuh ke sistem, termasuk utilitas database (Backup & Restore) & konfigurasi toko. |
+| 2 | **Owner** | `owner@cipak.com` | `Password123!` | Akses penuh ke seluruh menu (laporan, stok, produk, dll.) kecuali menu utilitas database. |
+| 3 | **Koorlap** | `koorlap1@cipak.com` | `Password123!` | Mengelola stok, belanja, dan melihat laporan yang dibatasi pada outlet yang ditugaskan (Cideng, Cipondoh, Tangerang). |
+| 4 | **Kasir** | `kasir1@cipak.com` | `Password123!` | Melakukan transaksi penjualan dan mengajukan daftar belanja kebutuhan harian terbatas pada outlet aktif (Cideng). |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+> [!TIP]
+> Semua password akun bawaan di atas diset seragam ke `Password123!`. Anda dapat menambahkan, memperbarui, atau menghapus pengguna melalui menu **Kelola User** setelah login sebagai *Developer* atau *Owner*.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
