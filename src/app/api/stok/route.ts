@@ -118,6 +118,18 @@ export async function POST(req: Request) {
   }
 
   try {
+    // Verify user exists in database to prevent foreign key errors due to stale session cookies (e.g. after database seeding/resets)
+    const userExists = await prisma.user.findUnique({
+      where: { id: user.id, deletedAt: null },
+    });
+    if (!userExists) {
+      return NextResponse.json(
+        { error: "Sesi Anda tidak valid atau database telah diperbarui. Silakan keluar (logout) lalu masuk kembali." },
+        { status: 401 }
+      );
+    }
+
+    console.log("POST /api/stok request received. User:", user);
     const body = await req.json();
     const { name, categoryId, minStock, initialStock, outletId } = body;
 
@@ -145,61 +157,67 @@ export async function POST(req: Request) {
     });
     const nextSortOrder = (maxOrderResult._max.sortOrder ?? 0) + 1;
 
-    // Create Product (INACTIVE by default)
-    const product = await prisma.product.create({
-      data: {
-        name,
-        categoryId,
-        sku,
-        sellingPrice: 0,
-        basePrice: 0,
-        status: "INACTIVE",
-        sortOrder: nextSortOrder,
-      },
-    });
-
-    // Initialize Stock for all outlets
-    const outlets = await prisma.outlet.findMany({ where: { deletedAt: null } });
-    for (const o of outlets) {
-      const isCurrentOutlet = o.id === outletId;
-      const qty = isCurrentOutlet ? parseInt(initialStock || 0) : 0;
-
-      const stock = await prisma.stock.create({
+    // Run the entire product, stock initialization, and audit logging in a transaction
+    const product = await prisma.$transaction(async (tx) => {
+      // Create Product (INACTIVE by default)
+      const newProduct = await tx.product.create({
         data: {
-          productId: product.id,
-          outletId: o.id,
-          initialStock: qty,
-          quantity: qty,
-          minStock: parseInt(minStock || 5),
+          name,
+          categoryId,
+          sku,
+          sellingPrice: 0,
+          basePrice: 0,
+          status: "INACTIVE",
+          sortOrder: nextSortOrder,
         },
       });
 
-      if (isCurrentOutlet && qty > 0) {
-        await prisma.stockMovement.create({
+      // Initialize Stock for all outlets
+      const outlets = await tx.outlet.findMany({ where: { deletedAt: null } });
+      for (const o of outlets) {
+        const isCurrentOutlet = o.id === outletId;
+        const qty = isCurrentOutlet ? parseInt(initialStock || 0) : 0;
+
+        const stock = await tx.stock.create({
           data: {
-            stockId: stock.id,
-            type: "IN",
+            productId: newProduct.id,
+            outletId: o.id,
+            initialStock: qty,
             quantity: qty,
-            notes: "Stok awal item baru",
-            userId: user.id,
+            minStock: parseInt(minStock || 5),
           },
         });
-      }
-    }
 
-    // Log Audit
-    await prisma.auditLog.create({
-      data: {
-        userId: user.id,
-        action: "CREATE",
-        table: "products",
-        recordId: product.id,
-        details: JSON.stringify({ name, sku, isStockItemOnly: true }),
-      },
+        if (isCurrentOutlet && qty > 0) {
+          await tx.stockMovement.create({
+            data: {
+              stockId: stock.id,
+              type: "IN",
+              quantity: qty,
+              notes: "Stok awal item baru",
+              userId: user.id,
+            },
+          });
+        }
+      }
+
+      // Log Audit
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          action: "CREATE",
+          table: "products",
+          recordId: newProduct.id,
+          details: JSON.stringify({ name, sku, isStockItemOnly: true }),
+        },
+      });
+
+      return newProduct;
     });
 
     return NextResponse.json(product);
   } catch (error: any) {
+    console.error("POST /api/stok failed with error:", error);
     return NextResponse.json(
       { error: "Gagal membuat stok baru: " + error.message },
       { status: 500 }

@@ -60,35 +60,23 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
 
   const user = session?.user as any;
   const userRole = user?.role || "KASIR";
-  const userOutlets = user?.outlets || [];
+  const userOutlets: any[] = user?.outlets || [];
   const activeOutletId = user?.activeOutletId;
 
-  // Find active outlet object
-  const [activeOutlet, setActiveOutlet] = useState<any>(null);
-
-  useEffect(() => {
+  // Derive activeOutlet without storing it in state (prevents infinite loop)
+  const activeOutlet = React.useMemo(() => {
     if (activeOutletId && userOutlets.length > 0) {
       const found = userOutlets.find((o: any) => o.id === activeOutletId);
-      if (found) {
-        if (!activeOutlet || activeOutlet.id !== found.id) {
-          setActiveOutlet(found);
-        }
-      } else if (userRole === "DEVELOPER" || userRole === "OWNER") {
-        // For Developer/Owner, fetch it from allOutlets
-        const foundInAll = allOutlets.find((o: any) => o.id === activeOutletId);
-        if (foundInAll) {
-          if (!activeOutlet || activeOutlet.id !== foundInAll.id) {
-            setActiveOutlet(foundInAll);
-          }
-        }
-      }
-    } else if (userOutlets.length > 0) {
-      const defaultOutlet = userOutlets[0];
-      if (!activeOutlet || activeOutlet.id !== defaultOutlet.id) {
-        setActiveOutlet(defaultOutlet);
-      }
+      if (found) return found;
     }
-  }, [activeOutletId, userOutlets, allOutlets, userRole, activeOutlet]);
+    if (activeOutletId && allOutlets.length > 0) {
+      const found = allOutlets.find((o: any) => o.id === activeOutletId);
+      if (found) return found;
+    }
+    return userOutlets[0] ?? null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOutletId, userOutlets.map((o: any) => o.id).join(","), allOutlets.map((o: any) => o.id).join(",")]);
+
 
   // Load all outlets for DEVELOPER and OWNER roles
   const loadAllOutlets = async () => {
@@ -202,7 +190,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
   return (
     <>
       {/* Desktop Sidebar (visible on large screens, hidden on mobile) */}
-      <aside className="hidden lg:flex w-64 bg-white border-r border-border-custom h-screen flex-col justify-between p-4 shrink-0 no-print">
+      <aside className="hidden lg:flex w-64 bg-white border-r border-border-custom h-screen flex-col justify-between p-4 shrink-0 no-print overflow-y-auto">
         {sidebarContent}
       </aside>
 
@@ -224,7 +212,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose
             animate={{ x: 0 }}
             exit={{ x: "-100%" }}
             transition={{ type: "tween", duration: 0.2 }}
-            className="fixed inset-y-0 left-0 w-64 bg-white border-r border-border-custom h-screen flex flex-col justify-between p-4 z-50 shadow-2xl lg:hidden no-print"
+            className="fixed inset-y-0 left-0 w-64 bg-white border-r border-border-custom h-screen flex flex-col justify-between p-4 z-50 shadow-2xl lg:hidden no-print overflow-y-auto"
           >
             {/* Mobile close button inside sidebar */}
             <button

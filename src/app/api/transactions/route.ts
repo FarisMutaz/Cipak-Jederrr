@@ -129,101 +129,102 @@ export async function POST(req: Request) {
               },
             });
           }
-        } else {
-          const hasLinks = !!product.linkedProductId || !!product.linkedProductId2;
+        }
 
-          if (hasLinks) {
-            if (product.linkedProductId) {
-              const deductionQty1 = item.quantity * (product.stockDeductionQty || 1);
-              const stock1 = await tx.stock.findUnique({
-                where: {
-                  productId_outletId: {
-                    productId: product.linkedProductId,
-                    outletId: outletId,
-                  },
-                },
-              });
-              if (!stock1) {
-                throw new Error(`Stok utama 1 untuk produk ${product.name} tidak terdaftar di outlet ini`);
-              }
-              await tx.stock.update({
-                where: { id: stock1.id },
-                data: {
-                  quantity: { decrement: deductionQty1 },
-                  sold: { increment: deductionQty1 },
-                },
-              });
-              await tx.stockMovement.create({
-                data: {
-                  stockId: stock1.id,
-                  type: StockMovementType.OUT,
-                  quantity: deductionQty1,
-                  notes: `Penjualan ${invoiceNumber} (${product.name} x${item.quantity})`,
-                  userId: cashierId,
-                },
-              });
-            }
+        // Adjust product stock or linked product stock
+        const hasLinks = !!product.linkedProductId || !!product.linkedProductId2;
 
-            if (product.linkedProductId2) {
-              const deductionQty2 = item.quantity * (product.stockDeductionQty2 || 1);
-              const stock2 = await tx.stock.findUnique({
-                where: {
-                  productId_outletId: {
-                    productId: product.linkedProductId2,
-                    outletId: outletId,
-                  },
-                },
-              });
-              if (!stock2) {
-                throw new Error(`Stok utama 2 untuk produk ${product.name} tidak terdaftar di outlet ini`);
-              }
-              await tx.stock.update({
-                where: { id: stock2.id },
-                data: {
-                  quantity: { decrement: deductionQty2 },
-                  sold: { increment: deductionQty2 },
-                },
-              });
-              await tx.stockMovement.create({
-                data: {
-                  stockId: stock2.id,
-                  type: StockMovementType.OUT,
-                  quantity: deductionQty2,
-                  notes: `Penjualan ${invoiceNumber} (${product.name} x${item.quantity})`,
-                  userId: cashierId,
-                },
-              });
-            }
-          } else {
-            const deductionQty = item.quantity;
-            const stock = await tx.stock.findUnique({
+        if (hasLinks) {
+          if (product.linkedProductId) {
+            const deductionQty1 = item.quantity * (product.stockDeductionQty || 1);
+            const stock1 = await tx.stock.findUnique({
               where: {
                 productId_outletId: {
-                  productId: product.id,
+                  productId: product.linkedProductId,
                   outletId: outletId,
                 },
               },
             });
-            if (!stock) {
-              throw new Error(`Stok untuk produk ${product.name} tidak terdaftar di outlet ini`);
+            if (!stock1) {
+              throw new Error(`Stok utama 1 untuk produk ${product.name} tidak terdaftar di outlet ini`);
             }
             await tx.stock.update({
-              where: { id: stock.id },
+              where: { id: stock1.id },
               data: {
-                quantity: { decrement: deductionQty },
-                sold: { increment: deductionQty },
+                quantity: { decrement: deductionQty1 },
+                sold: { increment: deductionQty1 },
               },
             });
             await tx.stockMovement.create({
               data: {
-                stockId: stock.id,
+                stockId: stock1.id,
                 type: StockMovementType.OUT,
-                quantity: deductionQty,
+                quantity: deductionQty1,
                 notes: `Penjualan ${invoiceNumber} (${product.name} x${item.quantity})`,
                 userId: cashierId,
               },
             });
           }
+
+          if (product.linkedProductId2) {
+            const deductionQty2 = item.quantity * (product.stockDeductionQty2 || 1);
+            const stock2 = await tx.stock.findUnique({
+              where: {
+                productId_outletId: {
+                  productId: product.linkedProductId2,
+                  outletId: outletId,
+                },
+              },
+            });
+            if (!stock2) {
+              throw new Error(`Stok utama 2 untuk produk ${product.name} tidak terdaftar di outlet ini`);
+            }
+            await tx.stock.update({
+              where: { id: stock2.id },
+              data: {
+                quantity: { decrement: deductionQty2 },
+                sold: { increment: deductionQty2 },
+              },
+            });
+            await tx.stockMovement.create({
+              data: {
+                stockId: stock2.id,
+                type: StockMovementType.OUT,
+                quantity: deductionQty2,
+                notes: `Penjualan ${invoiceNumber} (${product.name} x${item.quantity})`,
+                userId: cashierId,
+              },
+            });
+          }
+        } else if (opStockLinks.length === 0) {
+          const deductionQty = item.quantity;
+          const stock = await tx.stock.findUnique({
+            where: {
+              productId_outletId: {
+                productId: product.id,
+                outletId: outletId,
+              },
+            },
+          });
+          if (!stock) {
+            throw new Error(`Stok untuk produk ${product.name} tidak terdaftar di outlet ini`);
+          }
+          await tx.stock.update({
+            where: { id: stock.id },
+            data: {
+              quantity: { decrement: deductionQty },
+              sold: { increment: deductionQty },
+            },
+          });
+          await tx.stockMovement.create({
+            data: {
+              stockId: stock.id,
+              type: StockMovementType.OUT,
+              quantity: deductionQty,
+              notes: `Penjualan ${invoiceNumber} (${product.name} x${item.quantity})`,
+              userId: cashierId,
+            },
+          });
         }
       }
 
@@ -468,97 +469,98 @@ export async function DELETE(req: Request) {
               });
             }
           }
-        } else {
-          const hasLinks = !!product.linkedProductId || !!product.linkedProductId2;
+        }
 
-          if (hasLinks) {
-            if (product.linkedProductId) {
-              const deductionQty1 = item.quantity * (product.stockDeductionQty || 1);
-              const stock1 = await tx.stock.findUnique({
-                where: {
-                  productId_outletId: {
-                    productId: product.linkedProductId,
-                    outletId: transaction.outletId,
-                  },
-                },
-              });
-              if (stock1) {
-                await tx.stock.update({
-                  where: { id: stock1.id },
-                  data: {
-                    quantity: { increment: deductionQty1 },
-                    sold: { decrement: deductionQty1 },
-                  },
-                });
-                await tx.stockMovement.create({
-                  data: {
-                    stockId: stock1.id,
-                    type: StockMovementType.IN,
-                    quantity: deductionQty1,
-                    notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
-                    userId: user.id,
-                  },
-                });
-              }
-            }
+        // Revert product stock or linked product stock
+        const hasLinks = !!product.linkedProductId || !!product.linkedProductId2;
 
-            if (product.linkedProductId2) {
-              const deductionQty2 = item.quantity * (product.stockDeductionQty2 || 1);
-              const stock2 = await tx.stock.findUnique({
-                where: {
-                  productId_outletId: {
-                    productId: product.linkedProductId2,
-                    outletId: transaction.outletId,
-                  },
-                },
-              });
-              if (stock2) {
-                await tx.stock.update({
-                  where: { id: stock2.id },
-                  data: {
-                    quantity: { increment: deductionQty2 },
-                    sold: { decrement: deductionQty2 },
-                  },
-                });
-                await tx.stockMovement.create({
-                  data: {
-                    stockId: stock2.id,
-                    type: StockMovementType.IN,
-                    quantity: deductionQty2,
-                    notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
-                    userId: user.id,
-                  },
-                });
-              }
-            }
-          } else {
-            const deductionQty = item.quantity;
-            const stock = await tx.stock.findUnique({
+        if (hasLinks) {
+          if (product.linkedProductId) {
+            const deductionQty1 = item.quantity * (product.stockDeductionQty || 1);
+            const stock1 = await tx.stock.findUnique({
               where: {
                 productId_outletId: {
-                  productId: product.id,
+                  productId: product.linkedProductId,
                   outletId: transaction.outletId,
                 },
               },
             });
-            if (stock) {
+            if (stock1) {
               await tx.stock.update({
-                where: { id: stock.id },
+                where: { id: stock1.id },
                 data: {
-                  quantity: { increment: deductionQty },
-                  sold: { decrement: deductionQty },
+                  quantity: { increment: deductionQty1 },
+                  sold: { decrement: deductionQty1 },
                 },
               });
               await tx.stockMovement.create({
                 data: {
-                  stockId: stock.id,
+                  stockId: stock1.id,
                   type: StockMovementType.IN,
-                  quantity: deductionQty,
+                  quantity: deductionQty1,
                   notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
                   userId: user.id,
                 },
               });
             }
+          }
+
+          if (product.linkedProductId2) {
+            const deductionQty2 = item.quantity * (product.stockDeductionQty2 || 1);
+            const stock2 = await tx.stock.findUnique({
+              where: {
+                productId_outletId: {
+                  productId: product.linkedProductId2,
+                  outletId: transaction.outletId,
+                },
+              },
+            });
+            if (stock2) {
+              await tx.stock.update({
+                where: { id: stock2.id },
+                data: {
+                  quantity: { increment: deductionQty2 },
+                  sold: { decrement: deductionQty2 },
+                },
+              });
+              await tx.stockMovement.create({
+                data: {
+                  stockId: stock2.id,
+                  type: StockMovementType.IN,
+                  quantity: deductionQty2,
+                  notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
+                  userId: user.id,
+                },
+              });
+            }
+          }
+        } else if (opStockLinks.length === 0) {
+          const deductionQty = item.quantity;
+          const stock = await tx.stock.findUnique({
+            where: {
+              productId_outletId: {
+                productId: product.id,
+                outletId: transaction.outletId,
+              },
+            },
+          });
+          if (stock) {
+            await tx.stock.update({
+              where: { id: stock.id },
+              data: {
+                quantity: { increment: deductionQty },
+                sold: { decrement: deductionQty },
+              },
+            });
+            await tx.stockMovement.create({
+              data: {
+                stockId: stock.id,
+                type: StockMovementType.IN,
+                quantity: deductionQty,
+                notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
+                userId: user.id,
+              },
+            });
           }
         }
       }

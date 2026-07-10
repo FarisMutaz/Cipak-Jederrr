@@ -12,6 +12,9 @@ const outfit = Outfit({
 export const metadata: Metadata = {
   title: "Cipak Jederrr POS",
   description: "Sistem Kasir Multi Outlet Cipak Jederrr!",
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({

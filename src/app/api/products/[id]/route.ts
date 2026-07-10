@@ -137,22 +137,41 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const { id } = await params;
 
   try {
-    const product = await prisma.product.update({
-      where: { id },
-      data: {
-        deletedAt: new Date(),
-      },
-    });
+    const now = new Date();
+    const result = await prisma.$transaction(async (tx) => {
+      const product = await tx.product.update({
+        where: { id },
+        data: {
+          deletedAt: now,
+        },
+      });
 
-    // Log Audit
-    await prisma.auditLog.create({
-      data: {
-        userId: user.id,
-        action: "DELETE",
-        table: "products",
-        recordId: id,
-        details: JSON.stringify({ name: product.name, sku: product.sku }),
-      },
+      // Soft-delete child/derived products linked to this parent
+      await tx.product.updateMany({
+        where: {
+          OR: [
+            { linkedProductId: id },
+            { linkedProductId2: id }
+          ],
+          deletedAt: null,
+        },
+        data: {
+          deletedAt: now,
+        },
+      });
+
+      // Log Audit
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          action: "DELETE",
+          table: "products",
+          recordId: id,
+          details: JSON.stringify({ name: product.name, sku: product.sku }),
+        },
+      });
+
+      return product;
     });
 
     return NextResponse.json({ success: true, message: "Produk berhasil dihapus" });

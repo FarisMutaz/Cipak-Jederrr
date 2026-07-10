@@ -129,7 +129,18 @@ export async function POST(req: Request) {
   }
 
   try {
-        const body = await req.json();
+    // Verify user exists in database to prevent foreign key errors due to stale session cookies (e.g. after database seeding/resets)
+    const userExists = await prisma.user.findUnique({
+      where: { id: user.id, deletedAt: null },
+    });
+    if (!userExists) {
+      return NextResponse.json(
+        { error: "Sesi Anda tidak valid atau database telah diperbarui. Silakan keluar (logout) lalu masuk kembali." },
+        { status: 401 }
+      );
+    }
+
+    const body = await req.json();
     const { name, categoryId, sku, barcode, sellingPrice, basePrice, status, linkedProductId, linkedProductId2, operationalStocks, stockDeductionQty, stockDeductionQty2 } = body;
 
     if (!name || !categoryId || !sku || !sellingPrice || !basePrice) {
@@ -151,56 +162,61 @@ export async function POST(req: Request) {
     });
     const nextSortOrder = (maxOrderResult._max.sortOrder ?? 0) + 1;
 
-    const product = await prisma.product.create({
-      data: {
-        name,
-        categoryId,
-        sku,
-        barcode: barcode || null,
-        sellingPrice: parseFloat(sellingPrice),
-        basePrice: parseFloat(basePrice),
-        status: status || "ACTIVE",
-        sortOrder: nextSortOrder,
-        linkedProductId: linkedProductId || null,
-        stockDeductionQty: stockDeductionQty ? parseInt(stockDeductionQty) : 1,
-        linkedProductId2: linkedProductId2 || null,
-        stockDeductionQty2: stockDeductionQty2 ? parseInt(stockDeductionQty2) : 1,
-        operationalStocks: {
-          create: (operationalStocks || []).map((os: any) => ({
-            operationalStockName: os.name,
-            deductionQty: parseFloat(os.deductionQty || 1),
-          })),
-        },
-      },
-    });
-
-    const hasOpStocks = operationalStocks && operationalStocks.length > 0;
-
-    // Automatically initialize stock = 0 for all outlets (ONLY if it is NOT a linked product or recipe product)
-    if (!linkedProductId && !linkedProductId2 && !hasOpStocks) {
-      const outlets = await prisma.outlet.findMany({ where: { deletedAt: null } });
-      for (const o of outlets) {
-        await prisma.stock.create({
-          data: {
-            productId: product.id,
-            outletId: o.id,
-            initialStock: 0,
-            quantity: 0,
-            minStock: 5,
+    // Run the entire product creation, stock initialization, and audit logging in a transaction
+    const product = await prisma.$transaction(async (tx) => {
+      const newProduct = await tx.product.create({
+        data: {
+          name,
+          categoryId,
+          sku,
+          barcode: barcode || null,
+          sellingPrice: parseFloat(sellingPrice),
+          basePrice: parseFloat(basePrice),
+          status: status || "ACTIVE",
+          sortOrder: nextSortOrder,
+          linkedProductId: linkedProductId || null,
+          stockDeductionQty: stockDeductionQty ? parseInt(stockDeductionQty) : 1,
+          linkedProductId2: linkedProductId2 || null,
+          stockDeductionQty2: stockDeductionQty2 ? parseInt(stockDeductionQty2) : 1,
+          operationalStocks: {
+            create: (operationalStocks || []).map((os: any) => ({
+              operationalStockName: os.name,
+              deductionQty: parseFloat(os.deductionQty || 1),
+            })),
           },
-        });
-      }
-    }
+        },
+      });
 
-    // Log Audit
-    await prisma.auditLog.create({
-      data: {
-        userId: user.id,
-        action: "CREATE",
-        table: "products",
-        recordId: product.id,
-        details: JSON.stringify({ name, sku, linkedProductId, linkedProductId2, operationalStocksCount: (operationalStocks || []).length, stockDeductionQty, stockDeductionQty2 }),
-      },
+      const hasOpStocks = operationalStocks && operationalStocks.length > 0;
+
+      // Automatically initialize stock = 0 for all outlets (ONLY if it is NOT a linked product or recipe product)
+      if (!linkedProductId && !linkedProductId2 && !hasOpStocks) {
+        const outlets = await tx.outlet.findMany({ where: { deletedAt: null } });
+        for (const o of outlets) {
+          await tx.stock.create({
+            data: {
+              productId: newProduct.id,
+              outletId: o.id,
+              initialStock: 0,
+              quantity: 0,
+              minStock: 5,
+            },
+          });
+        }
+      }
+
+      // Log Audit
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          action: "CREATE",
+          table: "products",
+          recordId: newProduct.id,
+          details: JSON.stringify({ name, sku, linkedProductId, linkedProductId2, operationalStocksCount: (operationalStocks || []).length, stockDeductionQty, stockDeductionQty2 }),
+        },
+      });
+
+      return newProduct;
     });
 
     return NextResponse.json(product);
