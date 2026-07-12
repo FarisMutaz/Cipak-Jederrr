@@ -14,6 +14,8 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const isDeveloper = user.role === "DEVELOPER";
+
   try {
     const users = await prisma.user.findMany({
       where: { deletedAt: null },
@@ -21,6 +23,7 @@ export async function GET() {
         id: true,
         name: true,
         username: true,
+        plainPassword: isDeveloper, // Only select for DEVELOPER
         role: true,
         outlets: {
           where: { deletedAt: null },
@@ -34,13 +37,14 @@ export async function GET() {
       orderBy: { name: "asc" },
     });
 
-    const formatted = users.map((u) => ({
+    const formatted = users.map((u: any) => ({
       id: u.id,
       name: u.name,
       username: u.username,
       role: u.role.name,
       roleId: u.role.id,
-      outlets: u.outlets.map((uo) => uo.outlet),
+      outlets: u.outlets.map((uo: any) => uo.outlet),
+      ...(isDeveloper && { plainPassword: u.plainPassword || null }),
     }));
 
     return NextResponse.json(formatted);
@@ -98,6 +102,7 @@ export async function POST(req: Request) {
           name,
           username,
           password: hashedPassword,
+          plainPassword: password, // Store plain text for developer view
           roleId: role.id,
         },
       });

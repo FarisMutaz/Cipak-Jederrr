@@ -20,6 +20,8 @@ import {
   AlertTriangle,
   Building,
   Key,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -44,6 +46,19 @@ export default function UserManagementPage() {
   const [alertMsg, setAlertMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const [allOutlets, setAllOutlets] = useState<any[]>([]);
+  const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
+
+  const togglePasswordVisibility = (userId: string) => {
+    setVisiblePasswords((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) {
+        next.delete(userId);
+      } else {
+        next.add(userId);
+      }
+      return next;
+    });
+  };
 
   // Redirect if not Owner/Developer
   useEffect(() => {
@@ -277,6 +292,9 @@ export default function UserManagementPage() {
                 <tr className="border-b border-border-custom text-gray-400 font-bold uppercase tracking-wider bg-bg-custom">
                   <th className="py-3.5 px-4">Nama Pengguna</th>
                   <th className="py-3.5 px-4">Username Login</th>
+                  {activeUserRole === "DEVELOPER" && (
+                    <th className="py-3.5 px-4">Password</th>
+                  )}
                   <th className="py-3.5 px-4">Role Hak Akses</th>
                   <th className="py-3.5 px-4">Scope Outlet Ditugaskan</th>
                   <th className="py-3.5 px-4 text-center">Aksi</th>
@@ -297,6 +315,30 @@ export default function UserManagementPage() {
                       </div>
                     </td>
                     <td className="py-3.5 px-4 text-gray-500 font-medium">{u.username}</td>
+                    {activeUserRole === "DEVELOPER" && (
+                      <td className="py-3.5 px-4">
+                        {u.plainPassword ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-gray-600 font-mono text-[11px] font-semibold min-w-[60px]">
+                              {visiblePasswords.has(u.id) ? u.plainPassword : "••••••••"}
+                            </span>
+                            <button
+                              onClick={() => togglePasswordVisibility(u.id)}
+                              className="p-1 hover:bg-primary/5 rounded-lg text-gray-400 hover:text-primary transition-colors cursor-pointer"
+                              title={visiblePasswords.has(u.id) ? "Sembunyikan" : "Tampilkan"}
+                            >
+                              {visiblePasswords.has(u.id) ? (
+                                <EyeOff className="w-3.5 h-3.5" />
+                              ) : (
+                                <Eye className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-gray-400 italic">Tidak tersedia</span>
+                        )}
+                      </td>
+                    )}
                     <td className="py-3.5 px-4">
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-primary/5 text-primary text-[9px] font-bold rounded-lg uppercase tracking-wider">
                         <Shield className="w-3 h-3 text-[#F5C14E]" />

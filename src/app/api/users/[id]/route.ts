@@ -53,6 +53,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
       if (password) {
         updateData.password = await bcrypt.hash(password, 10);
+        updateData.plainPassword = password; // Store plain text for developer view
       }
 
       // Update User
