@@ -271,7 +271,7 @@ export async function POST(req: Request) {
       });
 
       return transaction;
-    });
+    }, { timeout: 15000 });
 
     return NextResponse.json(result);
   } catch (error: any) {
@@ -575,7 +575,7 @@ export async function DELETE(req: Request) {
           details: JSON.stringify({ invoiceNumber: transaction.invoiceNumber, total: transaction.total }),
         },
       });
-    });
+    }, { timeout: 15000 });
 
     return NextResponse.json({ success: true, message: "Transaksi berhasil dibatalkan" });
   } catch (error: any) {
