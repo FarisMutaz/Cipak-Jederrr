@@ -67,61 +67,66 @@ export async function DELETE(req: Request) {
   }
 
   const { searchParams } = new URL(req.url);
-  const movementId = searchParams.get("id");
+  const id = searchParams.get("id");
 
-  if (!movementId) {
+  if (!id) {
     return NextResponse.json({ error: "Movement ID harus ditentukan" }, { status: 400 });
   }
 
+  const ids = id.split(",");
+
   try {
-    // Find the movement first
-    const movement = await prisma.operationalStockMovement.findUnique({
-      where: { id: movementId },
-      include: { operationalStock: true },
+    await prisma.$transaction(async (tx) => {
+      for (const singleId of ids) {
+        // Find the movement first
+        const movement = await tx.operationalStockMovement.findUnique({
+          where: { id: singleId },
+          include: { operationalStock: true },
+        });
+
+        if (!movement) {
+          continue;
+        }
+
+        // Reverse the stock effect
+        const stock = movement.operationalStock;
+        let updateData: any = {};
+
+        if (movement.type === "IN") {
+          // Was an IN movement, reverse: subtract from stockIn and quantity
+          updateData = {
+            stockIn: { decrement: movement.quantity },
+            quantity: { decrement: movement.quantity },
+          };
+        } else if (movement.type === "OUT") {
+          // Was an OUT movement, reverse: subtract from stockOut and add back to quantity
+          updateData = {
+            stockOut: { decrement: movement.quantity },
+            quantity: { increment: movement.quantity },
+          };
+        } else if (movement.type === "ADJUSTMENT") {
+          // Was a set initial stock adjustment
+          const currentInitial = stock.initialStock;
+          const newInitial = currentInitial - movement.quantity;
+          updateData = {
+            initialStock: newInitial,
+            quantity: { decrement: movement.quantity },
+          };
+        }
+
+        // Execute updates
+        await tx.operationalStock.update({
+          where: { id: stock.id },
+          data: updateData,
+        });
+
+        await tx.operationalStockMovement.delete({
+          where: { id: singleId },
+        });
+      }
     });
 
-    if (!movement) {
-      return NextResponse.json({ error: "Riwayat mutasi tidak ditemukan" }, { status: 404 });
-    }
-
-    // Reverse the stock effect
-    const stock = movement.operationalStock;
-    let updateData: any = {};
-
-    if (movement.type === "IN") {
-      // Was an IN movement, reverse: subtract from stockIn and quantity
-      updateData = {
-        stockIn: { decrement: movement.quantity },
-        quantity: { decrement: movement.quantity },
-      };
-    } else if (movement.type === "OUT") {
-      // Was an OUT movement, reverse: subtract from stockOut and add back to quantity
-      updateData = {
-        stockOut: { decrement: movement.quantity },
-        quantity: { increment: movement.quantity },
-      };
-    } else if (movement.type === "ADJUSTMENT") {
-      // Was a set initial stock adjustment
-      const currentInitial = stock.initialStock;
-      const newInitial = currentInitial - movement.quantity;
-      updateData = {
-        initialStock: newInitial,
-        quantity: { decrement: movement.quantity },
-      };
-    }
-
-    // Execute in transaction
-    await prisma.$transaction([
-      prisma.operationalStock.update({
-        where: { id: stock.id },
-        data: updateData,
-      }),
-      prisma.operationalStockMovement.delete({
-        where: { id: movementId },
-      }),
-    ]);
-
-    return NextResponse.json({ message: "Riwayat mutasi opname berhasil dihapus & stok telah disesuaikan!" });
+    return NextResponse.json({ message: ids.length > 1 ? "Riwayat mutasi opname terpilih berhasil dihapus & stok telah disesuaikan!" : "Riwayat mutasi opname berhasil dihapus & stok telah disesuaikan!" });
   } catch (error: any) {
     return NextResponse.json(
       { error: "Gagal menghapus riwayat mutasi: " + error.message },

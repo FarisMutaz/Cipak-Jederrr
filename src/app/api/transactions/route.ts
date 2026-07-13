@@ -397,71 +397,168 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: "ID Transaksi harus ditentukan" }, { status: 400 });
   }
 
+  const ids = id.split(",");
+
   try {
-    // 1. Fetch transaction and its items
-    const transaction = await prisma.transaction.findUnique({
-      where: { id },
-      include: {
-        items: {
-          include: {
-            product: true,
-          },
-        },
-      },
-    });
-
-    if (!transaction || transaction.deletedAt) {
-      return NextResponse.json({ error: "Transaksi tidak ditemukan" }, { status: 404 });
-    }
-
-    // 2. Perform deletion and stock revert inside a transaction
+    // Perform deletion and stock revert inside a transaction
     await prisma.$transaction(async (tx) => {
-      // Soft delete the transaction
-      await tx.transaction.update({
-        where: { id },
-        data: { deletedAt: new Date() },
-      });
-
-      // Soft delete related revenue
-      await tx.revenue.updateMany({
-        where: { transactionId: id },
-        data: { deletedAt: new Date() },
-      });
-
-      // Revert stocks for each item
-      for (const item of transaction.items) {
-        const product = item.product;
-        const opStockLinks = await tx.productOperationalStock.findMany({
-          where: { productId: product.id },
+      for (const singleId of ids) {
+        // Fetch transaction and its items
+        const transaction = await tx.transaction.findUnique({
+          where: { id: singleId },
+          include: {
+            items: {
+              include: {
+                product: true,
+              },
+            },
+          },
         });
 
-        if (opStockLinks.length > 0) {
-          for (const link of opStockLinks) {
-            const deductionQty = item.quantity * (link.deductionQty || 1);
-            const opStock = await tx.operationalStock.findUnique({
+        if (!transaction || transaction.deletedAt) {
+          continue;
+        }
+
+        // Soft delete the transaction
+        await tx.transaction.update({
+          where: { id: singleId },
+          data: { deletedAt: new Date() },
+        });
+
+        // Soft delete related revenue
+        await tx.revenue.updateMany({
+          where: { transactionId: singleId },
+          data: { deletedAt: new Date() },
+        });
+
+        // Revert stocks for each item
+        for (const item of transaction.items) {
+          const product = item.product;
+          const opStockLinks = await tx.productOperationalStock.findMany({
+            where: { productId: product.id },
+          });
+
+          if (opStockLinks.length > 0) {
+            for (const link of opStockLinks) {
+              const deductionQty = item.quantity * (link.deductionQty || 1);
+              const opStock = await tx.operationalStock.findUnique({
+                where: {
+                  name_outletId: {
+                    name: link.operationalStockName,
+                    outletId: transaction.outletId,
+                  },
+                },
+              });
+
+              if (opStock) {
+                // Revert quantity and stockOut counter
+                await tx.operationalStock.update({
+                  where: { id: opStock.id },
+                  data: {
+                    quantity: { increment: deductionQty },
+                    stockOut: { decrement: deductionQty },
+                  },
+                });
+
+                // Log operational stock movement for cancellation
+                await tx.operationalStockMovement.create({
+                  data: {
+                    operationalStockId: opStock.id,
+                    type: "IN",
+                    quantity: deductionQty,
+                    notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
+                    userId: user.id,
+                  },
+                });
+              }
+            }
+          }
+
+          // Revert product stock or linked product stock
+          const hasLinks = !!product.linkedProductId || !!product.linkedProductId2;
+
+          if (hasLinks) {
+            if (product.linkedProductId) {
+              const deductionQty1 = item.quantity * (product.stockDeductionQty || 1);
+              const stock1 = await tx.stock.findUnique({
+                where: {
+                  productId_outletId: {
+                    productId: product.linkedProductId,
+                    outletId: transaction.outletId,
+                  },
+                },
+              });
+              if (stock1) {
+                await tx.stock.update({
+                  where: { id: stock1.id },
+                  data: {
+                    quantity: { increment: deductionQty1 },
+                    sold: { decrement: deductionQty1 },
+                  },
+                });
+                await tx.stockMovement.create({
+                  data: {
+                    stockId: stock1.id,
+                    type: StockMovementType.IN,
+                    quantity: deductionQty1,
+                    notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
+                    userId: user.id,
+                  },
+                });
+              }
+            }
+
+            if (product.linkedProductId2) {
+              const deductionQty2 = item.quantity * (product.stockDeductionQty2 || 1);
+              const stock2 = await tx.stock.findUnique({
+                where: {
+                  productId_outletId: {
+                    productId: product.linkedProductId2,
+                    outletId: transaction.outletId,
+                  },
+                },
+              });
+              if (stock2) {
+                await tx.stock.update({
+                  where: { id: stock2.id },
+                  data: {
+                    quantity: { increment: deductionQty2 },
+                    sold: { decrement: deductionQty2 },
+                  },
+                });
+                await tx.stockMovement.create({
+                  data: {
+                    stockId: stock2.id,
+                    type: StockMovementType.IN,
+                    quantity: deductionQty2,
+                    notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
+                    userId: user.id,
+                  },
+                });
+              }
+            }
+          } else if (opStockLinks.length === 0) {
+            const deductionQty = item.quantity;
+            const stock = await tx.stock.findUnique({
               where: {
-                name_outletId: {
-                  name: link.operationalStockName,
+                productId_outletId: {
+                  productId: product.id,
                   outletId: transaction.outletId,
                 },
               },
             });
-
-            if (opStock) {
-              // Revert quantity and stockOut counter
-              await tx.operationalStock.update({
-                where: { id: opStock.id },
+            if (stock) {
+              await tx.stock.update({
+                where: { id: stock.id },
                 data: {
                   quantity: { increment: deductionQty },
-                  stockOut: { decrement: deductionQty },
+                  sold: { decrement: deductionQty },
                 },
               });
-
-              // Log operational stock movement for cancellation
-              await tx.operationalStockMovement.create({
+              await tx.stockMovement.create({
                 data: {
-                  operationalStockId: opStock.id,
-                  type: "IN",
+                  stockId: stock.id,
+                  type: StockMovementType.IN,
                   quantity: deductionQty,
                   notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
                   userId: user.id,
@@ -471,113 +568,20 @@ export async function DELETE(req: Request) {
           }
         }
 
-        // Revert product stock or linked product stock
-        const hasLinks = !!product.linkedProductId || !!product.linkedProductId2;
-
-        if (hasLinks) {
-          if (product.linkedProductId) {
-            const deductionQty1 = item.quantity * (product.stockDeductionQty || 1);
-            const stock1 = await tx.stock.findUnique({
-              where: {
-                productId_outletId: {
-                  productId: product.linkedProductId,
-                  outletId: transaction.outletId,
-                },
-              },
-            });
-            if (stock1) {
-              await tx.stock.update({
-                where: { id: stock1.id },
-                data: {
-                  quantity: { increment: deductionQty1 },
-                  sold: { decrement: deductionQty1 },
-                },
-              });
-              await tx.stockMovement.create({
-                data: {
-                  stockId: stock1.id,
-                  type: StockMovementType.IN,
-                  quantity: deductionQty1,
-                  notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
-                  userId: user.id,
-                },
-              });
-            }
-          }
-
-          if (product.linkedProductId2) {
-            const deductionQty2 = item.quantity * (product.stockDeductionQty2 || 1);
-            const stock2 = await tx.stock.findUnique({
-              where: {
-                productId_outletId: {
-                  productId: product.linkedProductId2,
-                  outletId: transaction.outletId,
-                },
-              },
-            });
-            if (stock2) {
-              await tx.stock.update({
-                where: { id: stock2.id },
-                data: {
-                  quantity: { increment: deductionQty2 },
-                  sold: { decrement: deductionQty2 },
-                },
-              });
-              await tx.stockMovement.create({
-                data: {
-                  stockId: stock2.id,
-                  type: StockMovementType.IN,
-                  quantity: deductionQty2,
-                  notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
-                  userId: user.id,
-                },
-              });
-            }
-          }
-        } else if (opStockLinks.length === 0) {
-          const deductionQty = item.quantity;
-          const stock = await tx.stock.findUnique({
-            where: {
-              productId_outletId: {
-                productId: product.id,
-                outletId: transaction.outletId,
-              },
-            },
-          });
-          if (stock) {
-            await tx.stock.update({
-              where: { id: stock.id },
-              data: {
-                quantity: { increment: deductionQty },
-                sold: { decrement: deductionQty },
-              },
-            });
-            await tx.stockMovement.create({
-              data: {
-                stockId: stock.id,
-                type: StockMovementType.IN,
-                quantity: deductionQty,
-                notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
-                userId: user.id,
-              },
-            });
-          }
-        }
+        // Create Audit Log
+        await tx.auditLog.create({
+          data: {
+            userId: user.id,
+            action: "DELETE",
+            table: "transactions",
+            recordId: singleId,
+            details: JSON.stringify({ invoiceNumber: transaction.invoiceNumber, total: transaction.total }),
+          },
+        });
       }
+    }, { timeout: 30000 });
 
-      // Create Audit Log
-      await tx.auditLog.create({
-        data: {
-          userId: user.id,
-          action: "DELETE",
-          table: "transactions",
-          recordId: id,
-          details: JSON.stringify({ invoiceNumber: transaction.invoiceNumber, total: transaction.total }),
-        },
-      });
-    }, { timeout: 15000 });
-
-    return NextResponse.json({ success: true, message: "Transaksi berhasil dibatalkan" });
+    return NextResponse.json({ success: true, message: ids.length > 1 ? "Transaksi terpilih berhasil dibatalkan" : "Transaksi berhasil dibatalkan" });
   } catch (error: any) {
     return NextResponse.json(
       { error: "Gagal menghapus transaksi: " + error.message },

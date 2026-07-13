@@ -59,7 +59,15 @@ export default function PengeluaranPage() {
 
   const [activeOutlet, setActiveOutlet] = useState<string>("");
   const [selectedItemId, setSelectedItemId] = useState<string>("__MANUAL__");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [alertMsg, setAlertMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const isOwnerOrDeveloper = userRole === "OWNER" || userRole === "DEVELOPER";
+
+  // Clear selections when activeOutlet changes
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [activeOutlet]);
 
   const firstUserOutletId = userOutlets[0]?.id;
   const firstOutletToUseId = outletsToUse[0]?.id;
@@ -169,10 +177,10 @@ export default function PengeluaranPage() {
     },
   });
 
-  // Delete Expense Mutation (reusing /api/shopping/[id] DELETE)
+  // Delete Expense Mutation (reusing /api/shopping Route DELETE)
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/shopping/${id}`, {
+      const res = await fetch(`/api/shopping?id=${id}`, {
         method: "DELETE",
       });
       if (!res.ok) {
@@ -183,6 +191,7 @@ export default function PengeluaranPage() {
     },
     onSuccess: () => {
       triggerAlert("success", "Pengeluaran berhasil dihapus!");
+      setSelectedIds([]);
       queryClient.invalidateQueries({ queryKey: ["expense-list"] });
       queryClient.invalidateQueries({ queryKey: ["stok-opname-list"] });
       queryClient.invalidateQueries({ queryKey: ["stok-opname-movements"] });
@@ -192,6 +201,18 @@ export default function PengeluaranPage() {
       triggerAlert("error", error.message);
     },
   });
+
+  const handleDeleteSelected = async () => {
+    const ok = await confirm({
+      title: "Hapus Pengeluaran Terpilih",
+      message: `Apakah Anda yakin ingin menghapus ${selectedIds.length} catatan pengeluaran terpilih secara massal? Tindakan ini juga akan membalikkan penambahan stok opname terkait.`,
+      confirmText: "Ya, Hapus Semua",
+      variant: "danger",
+    });
+    if (ok) {
+      deleteMutation.mutate(selectedIds.join(","));
+    }
+  };
 
   const onSubmit = (data: any) => {
     if (!activeOutlet) {
@@ -423,9 +444,45 @@ export default function PengeluaranPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
+              {isOwnerOrDeveloper && selectedIds.length > 0 && (
+                <div className="bg-primary/5 border border-border-custom px-4 py-2.5 rounded-xl flex items-center justify-between mb-3 animate-fade-in shrink-0">
+                  <span className="text-xs font-bold text-primary">
+                    {selectedIds.length} item pengeluaran terpilih
+                  </span>
+                  <button
+                    onClick={handleDeleteSelected}
+                    disabled={deleteMutation.isPending}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary-dark text-white rounded-lg text-[10px] font-bold shadow-md shadow-primary/20 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {deleteMutation.isPending ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5" />
+                    )}
+                    <span>Hapus Terpilih ({selectedIds.length})</span>
+                  </button>
+                </div>
+              )}
+
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-border-custom text-gray-400 font-bold uppercase tracking-wider bg-bg-custom">
+                    {isOwnerOrDeveloper && (
+                      <th className="py-2.5 px-3 text-center w-10">
+                        <input
+                          type="checkbox"
+                          checked={expenseList.length > 0 && selectedIds.length === expenseList.length}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedIds(expenseList.map((item: any) => item.id));
+                            } else {
+                              setSelectedIds([]);
+                            }
+                          }}
+                          className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer accent-primary"
+                        />
+                      </th>
+                    )}
                     <th className="py-2.5 px-3">Tanggal</th>
                     <th className="py-2.5 px-3">Barang / Deskripsi</th>
                     <th className="py-2.5 px-3">Supplier</th>
@@ -433,12 +490,30 @@ export default function PengeluaranPage() {
                     <th className="py-2.5 px-3 text-right">Harga</th>
                     <th className="py-2.5 px-3 text-right">Total</th>
                     <th className="py-2.5 px-3">Pencatat</th>
-                    {userRole !== "KASIR" && <th className="py-2.5 px-3 text-center">Aksi</th>}
+                    {isOwnerOrDeveloper && <th className="py-2.5 px-3 text-center">Aksi</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {expenseList.map((item: any) => (
-                    <tr key={item.id} className="border-b border-border-custom last:border-none hover:bg-bg-custom/30 transition-colors">
+                    <tr key={item.id} className={`border-b border-border-custom last:border-none hover:bg-bg-custom/30 transition-colors ${
+                      selectedIds.includes(item.id) ? "bg-primary/5" : ""
+                    }`}>
+                      {isOwnerOrDeveloper && (
+                        <td className="py-3 px-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(item.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedIds((prev) => [...prev, item.id]);
+                              } else {
+                                setSelectedIds((prev) => prev.filter((id) => id !== item.id));
+                              }
+                            }}
+                            className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer accent-primary"
+                          />
+                        </td>
+                      )}
                       <td className="py-3 px-3 font-semibold text-gray-600 shrink-0">
                         {formatDate(item.date)}
                       </td>
@@ -461,11 +536,12 @@ export default function PengeluaranPage() {
                         <User className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                         <span className="truncate max-w-[80px]">{item.user?.name || "Sistem"}</span>
                       </td>
-                      {userRole !== "KASIR" && (
+                      {isOwnerOrDeveloper && (
                         <td className="py-3 px-3 text-center">
                           <button
                             onClick={() => handleDelete(item.id)}
-                            className="p-1.5 hover:bg-primary/10 rounded-lg text-gray-400 hover:text-primary transition-colors cursor-pointer"
+                            disabled={deleteMutation.isPending}
+                            className="p-1.5 hover:bg-primary/10 rounded-lg text-gray-400 hover:text-primary transition-colors cursor-pointer disabled:opacity-50"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { formatRupiah, formatDate } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { useConfirm } from "@/components/confirm-dialog";
 
 export default function RiwayatTransaksiPage() {
   const { data: session } = useSession();
@@ -50,8 +51,14 @@ export default function RiwayatTransaksiPage() {
   const limit = 15;
 
   const [selectedTrx, setSelectedTrx] = useState<any | null>(null);
-  const [trxToDelete, setTrxToDelete] = useState<any | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [alertMsg, setAlertMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const confirm = useConfirm();
+
+  // Clear selections when filters change
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [page, activeOutlet, debouncedSearch]);
 
   const firstUserOutletId = userOutlets[0]?.id;
   const firstOutletToUseId = outletsToUse[0]?.id;
@@ -115,7 +122,7 @@ export default function RiwayatTransaksiPage() {
     },
     onSuccess: (res) => {
       triggerAlert("success", res.message || "Transaksi berhasil dihapus & stok telah dikembalikan!");
-      setTrxToDelete(null);
+      setSelectedIds([]);
       queryClient.invalidateQueries({ queryKey: ["transactions-history"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["laporan"] });
@@ -123,9 +130,32 @@ export default function RiwayatTransaksiPage() {
     },
     onError: (err: any) => {
       triggerAlert("error", err.message);
-      setTrxToDelete(null);
     },
   });
+
+  const handleDeleteSingle = async (trx: any) => {
+    const ok = await confirm({
+      title: "Batalkan Transaksi?",
+      message: `Apakah Anda yakin ingin membatalkan transaksi ${trx.invoiceNumber} sebesar ${formatRupiah(trx.total)}? Stok akan dikembalikan otomatis ke inventory.`,
+      confirmText: "Ya, Batalkan",
+      variant: "danger",
+    });
+    if (ok) {
+      deleteMutation.mutate(trx.id);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    const ok = await confirm({
+      title: "Batalkan Transaksi Terpilih?",
+      message: `Apakah Anda yakin ingin membatalkan ${selectedIds.length} transaksi terpilih secara massal? Stok untuk masing-masing transaksi akan dikembalikan otomatis.`,
+      confirmText: "Ya, Batalkan Semua",
+      variant: "danger",
+    });
+    if (ok) {
+      deleteMutation.mutate(selectedIds.join(","));
+    }
+  };
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= (data?.totalCount ? Math.ceil(data.totalCount / limit) : 1)) {
@@ -213,6 +243,26 @@ export default function RiwayatTransaksiPage() {
 
       {/* Main Table Panel */}
       <div className="bg-white border border-border-custom rounded-2xl shadow-sm overflow-hidden flex flex-col min-h-[500px]">
+        {isOwnerOrDeveloper && selectedIds.length > 0 && (
+          <div className="bg-primary/5 border-b border-border-custom px-6 py-3 flex items-center justify-between animate-fade-in shrink-0">
+            <span className="text-xs font-bold text-primary">
+              {selectedIds.length} transaksi terpilih untuk dihapus/dibatalkan
+            </span>
+            <button
+              onClick={handleDeleteSelected}
+              disabled={deleteMutation.isPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary-dark text-white rounded-lg text-[10px] font-bold shadow-md shadow-primary/20 transition-all cursor-pointer disabled:opacity-50"
+            >
+              {deleteMutation.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="w-3.5 h-3.5" />
+              )}
+              <span>Hapus Terpilih ({selectedIds.length})</span>
+            </button>
+          </div>
+        )}
+
         {isLoading ? (
           <div className="flex-1 flex flex-col items-center justify-center py-32 gap-3 text-gray-400">
             <Loader2 className="w-9 h-9 animate-spin text-primary" />
@@ -228,6 +278,22 @@ export default function RiwayatTransaksiPage() {
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-border-custom bg-bg-custom text-gray-400 font-bold uppercase tracking-wider text-[10px]">
+                  {isOwnerOrDeveloper && (
+                    <th className="py-3 px-4 text-center w-10">
+                      <input
+                        type="checkbox"
+                        checked={data?.transactions?.length > 0 && selectedIds.length === data.transactions.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedIds(data.transactions.map((t: any) => t.id));
+                          } else {
+                            setSelectedIds([]);
+                          }
+                        }}
+                        className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer accent-primary"
+                      />
+                    </th>
+                  )}
                   <th className="py-3 px-4">Tanggal / Waktu</th>
                   <th className="py-3 px-4">No. Invoice</th>
                   <th className="py-3 px-4">Outlet</th>
@@ -248,8 +314,28 @@ export default function RiwayatTransaksiPage() {
                   return (
                     <tr
                       key={trx.id}
-                      className="border-b border-border-custom last:border-none hover:bg-bg-custom/30 transition-colors"
+                      className={`border-b border-border-custom last:border-none hover:bg-bg-custom/30 transition-colors ${
+                        selectedIds.includes(trx.id) ? "bg-primary/5" : ""
+                      }`}
                     >
+                      {/* Select Checkbox */}
+                      {isOwnerOrDeveloper && (
+                        <td className="py-3.5 px-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(trx.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedIds((prev) => [...prev, trx.id]);
+                              } else {
+                                setSelectedIds((prev) => prev.filter((id) => id !== trx.id));
+                              }
+                            }}
+                            className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer accent-primary"
+                          />
+                        </td>
+                      )}
+
                       {/* Date & Time */}
                       <td className="py-3.5 px-4 font-semibold text-gray-600">
                         <div className="flex flex-col">
@@ -320,8 +406,9 @@ export default function RiwayatTransaksiPage() {
                           {/* Only show delete option for OWNER/DEVELOPER */}
                           {isOwnerOrDeveloper && (
                             <button
-                              onClick={() => setTrxToDelete(trx)}
-                              className="p-1.5 hover:bg-primary/10 rounded-lg text-gray-400 hover:text-primary transition-colors cursor-pointer"
+                              onClick={() => handleDeleteSingle(trx)}
+                              disabled={deleteMutation.isPending}
+                              className="p-1.5 hover:bg-primary/10 rounded-lg text-gray-400 hover:text-primary transition-colors cursor-pointer disabled:opacity-50"
                               title="Batalkan & Hapus Transaksi"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -460,57 +547,7 @@ export default function RiwayatTransaksiPage() {
         )}
       </AnimatePresence>
 
-      {/* Modal 2: Delete / Cancel Transaction Confirmation */}
-      <AnimatePresence>
-        {trxToDelete && (
-          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-2xl w-full max-w-sm p-6 border border-border-custom shadow-2xl relative flex flex-col gap-4 overflow-y-auto max-h-[90vh]"
-            >
-              <div className="flex items-center gap-3 text-primary">
-                <div className="p-2.5 bg-primary/10 rounded-xl">
-                  <AlertCircle className="w-6 h-6" />
-                </div>
-                <h3 className="font-black text-base text-text-custom">Batalkan Transaksi?</h3>
-              </div>
-
-              <div className="text-xs text-gray-500 font-medium leading-relaxed">
-                Apakah Anda yakin ingin membatalkan transaksi <span className="font-bold text-text-custom font-mono">{trxToDelete.invoiceNumber}</span> sebesar <span className="font-bold text-primary">{formatRupiah(trxToDelete.total)}</span>?
-                <p className="mt-2 text-[10px] bg-amber-50 text-amber-700 font-bold p-2.5 rounded-lg border border-amber-100 leading-normal">
-                  ⚠️ Penghapusan ini akan mengembalikan jumlah stok yang terpotong kembali ke inventory outlet secara otomatis.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2.5 mt-2">
-                <button
-                  onClick={() => setTrxToDelete(null)}
-                  disabled={deleteMutation.isPending}
-                  className="flex-1 py-2.5 border border-border-custom hover:bg-gray-50 text-text-custom rounded-xl text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  Tutup
-                </button>
-                <button
-                  onClick={() => deleteMutation.mutate(trxToDelete.id)}
-                  disabled={deleteMutation.isPending}
-                  className="flex-1 py-2.5 bg-primary hover:bg-primary-dark text-white rounded-xl text-xs font-bold shadow-md shadow-primary/20 hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  {deleteMutation.isPending ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Memproses...</span>
-                    </>
-                  ) : (
-                    <span>Ya, Batalkan</span>
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {/* Modal 2: Delete / Cancel Transaction Confirmation was removed and replaced by custom confirm hook */}
     </div>
   );
 }

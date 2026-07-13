@@ -151,3 +151,98 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export async function DELETE(req: Request) {
+  const session = await auth();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const user = session.user as any;
+  if (user.role !== "DEVELOPER" && user.role !== "OWNER") {
+    return NextResponse.json({ error: "Forbidden: Hanya Owner atau Developer yang dapat menghapus item belanja" }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get("id");
+
+  if (!id) {
+    return NextResponse.json({ error: "ID Item Belanja harus ditentukan" }, { status: 400 });
+  }
+
+  const ids = id.split(",");
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      for (const singleId of ids) {
+        // Find shopping list first
+        const item = await tx.shoppingList.findUnique({
+          where: { id: singleId },
+        });
+
+        if (!item || item.deletedAt) {
+          continue;
+        }
+
+        // Soft delete shopping list
+        await tx.shoppingList.update({
+          where: { id: singleId },
+          data: { deletedAt: new Date() },
+        });
+
+        // Soft delete linked expense
+        await tx.expense.updateMany({
+          where: { shoppingListId: singleId },
+          data: { deletedAt: new Date() },
+        });
+
+        // Reverse stock increment if linked to operationalStockId
+        if (item.operationalStockId && item.qty) {
+          const opStock = await tx.operationalStock.findUnique({
+            where: { id: item.operationalStockId },
+          });
+          if (opStock) {
+            const factor = opStock.qtyPerUnit || 1;
+            const decrementedQty = item.qty * factor;
+            const nextQty = opStock.quantity - decrementedQty;
+            await tx.operationalStock.update({
+              where: { id: item.operationalStockId },
+              data: {
+                stockIn: { decrement: decrementedQty },
+                quantity: nextQty,
+              },
+            });
+
+            await tx.operationalStockMovement.create({
+              data: {
+                operationalStockId: item.operationalStockId,
+                type: "OUT",
+                quantity: decrementedQty,
+                notes: `Pembatalan/Penghapusan Pembelian: ${item.itemName} (${item.qty}x beli @ ${factor} ${opStock.unit})`,
+                userId: user.id,
+              },
+            });
+          }
+        }
+
+        // Audit log
+        await tx.auditLog.create({
+          data: {
+            userId: user.id,
+            action: "DELETE",
+            table: "shopping_lists",
+            recordId: singleId,
+            details: JSON.stringify({ itemName: item.itemName, total: item.total }),
+          },
+        });
+      }
+    });
+
+    return NextResponse.json({ success: true, message: ids.length > 1 ? "Item belanja terpilih berhasil dihapus" : "Berhasil menghapus item belanja" });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || "Gagal menghapus item belanja" },
+      { status: 500 }
+    );
+  }
+}

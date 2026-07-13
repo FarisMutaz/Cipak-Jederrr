@@ -62,7 +62,13 @@ export default function InputStokFormPage() {
     : userOutlets;
 
   const [activeOutlet, setActiveOutlet] = useState<string>("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [alertMsg, setAlertMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Clear selections when activeOutlet changes
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [activeOutlet]);
 
   const firstUserOutletId = userOutlets[0]?.id;
   const firstOutletToUseId = outletsToUse[0]?.id;
@@ -194,6 +200,7 @@ export default function InputStokFormPage() {
     },
     onSuccess: (res) => {
       triggerAlert("success", res.message || "Riwayat mutasi berhasil dihapus!");
+      setSelectedIds([]);
       queryClient.invalidateQueries({ queryKey: ["movements-history"] });
       queryClient.invalidateQueries({ queryKey: ["stocks-list"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -202,6 +209,18 @@ export default function InputStokFormPage() {
       triggerAlert("error", err.message);
     },
   });
+
+  const handleDeleteSelected = async () => {
+    const ok = await confirm({
+      title: "Hapus Riwayat Terpilih",
+      message: `Apakah Anda yakin ingin menghapus ${selectedIds.length} riwayat mutasi terpilih secara massal? Stok produk terkait akan disesuaikan kembali secara otomatis.`,
+      confirmText: "Ya, Hapus Semua",
+      variant: "danger",
+    });
+    if (ok) {
+      deleteMovementMutation.mutate(selectedIds.join(","));
+    }
+  };
 
   const handleDeleteMovement = async (movementId: string, productName: string) => {
     const ok = await confirm({
@@ -446,6 +465,26 @@ export default function InputStokFormPage() {
 
             {/* Movements History List */}
             <div className="overflow-x-auto min-h-[350px]">
+              {isOwnerOrDev && selectedIds.length > 0 && (
+                <div className="bg-primary/5 border border-border-custom px-4 py-2.5 rounded-xl flex items-center justify-between mb-3 animate-fade-in shrink-0">
+                  <span className="text-xs font-bold text-primary">
+                    {selectedIds.length} riwayat mutasi terpilih
+                  </span>
+                  <button
+                    onClick={handleDeleteSelected}
+                    disabled={deleteMovementMutation.isPending}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary-dark text-white rounded-lg text-[10px] font-bold shadow-md shadow-primary/20 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {deleteMovementMutation.isPending ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5" />
+                    )}
+                    <span>Hapus Terpilih ({selectedIds.length})</span>
+                  </button>
+                </div>
+              )}
+
               {isLoadingHistory ? (
                 <div className="flex flex-col items-center justify-center py-20 gap-2 text-gray-400">
                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -459,6 +498,22 @@ export default function InputStokFormPage() {
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="border-b border-border-custom text-gray-400 font-bold uppercase tracking-wider bg-bg-custom">
+                      {isOwnerOrDev && (
+                        <th className="py-2.5 px-3 text-center w-10">
+                          <input
+                            type="checkbox"
+                            checked={movements.length > 0 && selectedIds.length === movements.length}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedIds(movements.map((m: any) => m.id));
+                              } else {
+                                setSelectedIds([]);
+                              }
+                            }}
+                            className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer accent-primary"
+                          />
+                        </th>
+                      )}
                       <th className="py-2.5 px-3">Waktu</th>
                       <th className="py-2.5 px-3">Produk</th>
                       <th className="py-2.5 px-3 text-center">Tipe</th>
@@ -476,8 +531,26 @@ export default function InputStokFormPage() {
                       return (
                         <tr
                           key={m.id}
-                          className="border-b border-border-custom last:border-none hover:bg-bg-custom/30 transition-colors"
+                          className={`border-b border-border-custom last:border-none hover:bg-bg-custom/30 transition-colors ${
+                            selectedIds.includes(m.id) ? "bg-primary/5" : ""
+                          }`}
                         >
+                          {isOwnerOrDev && (
+                            <td className="py-3 px-3 text-center">
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.includes(m.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedIds((prev) => [...prev, m.id]);
+                                  } else {
+                                    setSelectedIds((prev) => prev.filter((id) => id !== m.id));
+                                  }
+                                }}
+                                className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer accent-primary"
+                              />
+                            </td>
+                          )}
                           <td className="py-3 px-3 text-gray-500 font-semibold truncate max-w-[120px]">
                             {formatDayDate(m.createdAt)}
                           </td>
