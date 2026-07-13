@@ -17,9 +17,11 @@ import {
   Minus,
   Check,
   ClipboardList,
+  Trash2,
 } from "lucide-react";
 import { cn, formatDayDate } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { useConfirm } from "@/components/confirm-dialog";
 
 const formSchema = zod.object({
   stockId: zod.string().min(1, { message: "Pilih produk terlebih dahulu" }),
@@ -30,6 +32,8 @@ const formSchema = zod.object({
 
 type AdjustmentFormValues = zod.infer<typeof formSchema>;
 
+const EMPTY_ARRAY: any[] = [];
+
 export default function InputStokFormPage() {
   const { data: session } = useSession();
   const queryClient = useQueryClient();
@@ -37,9 +41,12 @@ export default function InputStokFormPage() {
   const userRole = user?.role || "KASIR";
   const userOutlets = user?.outlets || [];
   const activeOutletId = user?.activeOutletId;
+  const confirm = useConfirm();
+
+  const isOwnerOrDev = userRole === "OWNER" || userRole === "DEVELOPER";
 
   // Query: Outlets dropdown list
-  const { data: dbOutlets = [] } = useQuery({
+  const { data: dbOutlets = EMPTY_ARRAY } = useQuery({
     queryKey: ["outlets-dropdown-list", userRole],
     queryFn: async () => {
       if (userRole !== "DEVELOPER" && userRole !== "OWNER") return [];
@@ -72,7 +79,7 @@ export default function InputStokFormPage() {
   }, [activeOutletId, firstOutletToUseId, firstUserOutletId, userRole]);
 
   // Query: Fetch stocks for selected outlet
-  const { data: stocks = [], isLoading: isLoadingStocks } = useQuery({
+  const { data: stocks = EMPTY_ARRAY, isLoading: isLoadingStocks } = useQuery({
     queryKey: ["stocks-list", activeOutlet],
     queryFn: async () => {
       if (!activeOutlet) return [];
@@ -84,7 +91,7 @@ export default function InputStokFormPage() {
   });
 
   // Query: Fetch stock movements history for selected outlet
-  const { data: movements = [], isLoading: isLoadingHistory, refetch: refetchHistory } = useQuery({
+  const { data: movements = EMPTY_ARRAY, isLoading: isLoadingHistory, refetch: refetchHistory } = useQuery({
     queryKey: ["movements-history", activeOutlet],
     queryFn: async () => {
       if (!activeOutlet) return [];
@@ -135,12 +142,12 @@ export default function InputStokFormPage() {
   // Reset form when outlet changes
   useEffect(() => {
     reset({
-      stockId: stocks.length > 0 ? stocks[0].id : "",
+      stockId: "",
       type: "IN",
       qty: 0,
       notes: "",
     });
-  }, [activeOutlet, reset, stocks]);
+  }, [activeOutlet, reset]);
 
   // Mutation: Save stock adjustment
   const adjustMutation = useMutation({
@@ -171,6 +178,41 @@ export default function InputStokFormPage() {
 
   const onSubmit = (data: AdjustmentFormValues) => {
     adjustMutation.mutate(data);
+  };
+
+  // Mutation: Delete a stock movement (reverse stock)
+  const deleteMovementMutation = useMutation({
+    mutationFn: async (movementId: string) => {
+      const res = await fetch(`/api/stok/movements?id=${movementId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Gagal menghapus riwayat mutasi");
+      }
+      return res.json();
+    },
+    onSuccess: (res) => {
+      triggerAlert("success", res.message || "Riwayat mutasi berhasil dihapus!");
+      queryClient.invalidateQueries({ queryKey: ["movements-history"] });
+      queryClient.invalidateQueries({ queryKey: ["stocks-list"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (err: any) => {
+      triggerAlert("error", err.message);
+    },
+  });
+
+  const handleDeleteMovement = async (movementId: string, productName: string) => {
+    const ok = await confirm({
+      title: "Hapus Riwayat Mutasi",
+      message: `Apakah Anda yakin ingin menghapus riwayat mutasi "${productName}"? Stok akan disesuaikan secara otomatis.`,
+      confirmText: "Ya, Hapus",
+      variant: "danger",
+    });
+    if (ok) {
+      deleteMovementMutation.mutate(movementId);
+    }
   };
 
   const handleCancel = () => {
@@ -423,6 +465,7 @@ export default function InputStokFormPage() {
                       <th className="py-2.5 px-3 text-center">Jumlah</th>
                       <th className="py-2.5 px-3">Oleh</th>
                       <th className="py-2.5 px-3">Catatan</th>
+                      {isOwnerOrDev && <th className="py-2.5 px-3 text-center">Aksi</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -467,6 +510,18 @@ export default function InputStokFormPage() {
                           <td className="py-3 px-3 text-gray-400 font-medium leading-normal max-w-[150px] truncate" title={m.notes}>
                             {m.notes}
                           </td>
+                          {isOwnerOrDev && (
+                            <td className="py-3 px-3 text-center">
+                              <button
+                                onClick={() => handleDeleteMovement(m.id, m.productName)}
+                                disabled={deleteMovementMutation.isPending}
+                                className="p-1.5 hover:bg-primary/5 rounded-lg text-gray-400 hover:text-primary transition-colors cursor-pointer disabled:opacity-50"
+                                title="Hapus Riwayat"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}

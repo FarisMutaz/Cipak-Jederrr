@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { formatRupiah, formatDate } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { useConfirm } from "@/components/confirm-dialog";
 
 const expenseSchema = zod.object({
   date: zod.string().min(1, { message: "Tanggal harus diisi" }),
@@ -39,6 +40,7 @@ export default function PengeluaranPage() {
   const userRole = user?.role || "KASIR";
   const userOutlets = user?.outlets || [];
   const activeOutletId = user?.activeOutletId;
+  const confirm = useConfirm();
 
   const { data: dbOutlets = [] } = useQuery({
     queryKey: ["outlets-dropdown-list", userRole],
@@ -202,8 +204,14 @@ export default function PengeluaranPage() {
     });
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm("Apakah Anda yakin ingin menghapus catatan pengeluaran ini? Tindakan ini juga akan membalikkan penambahan stok opname terkait.")) {
+  const handleDelete = async (id: string) => {
+    const ok = await confirm({
+      title: "Hapus Pengeluaran",
+      message: "Apakah Anda yakin ingin menghapus catatan pengeluaran ini? Tindakan ini juga akan membalikkan penambahan stok opname terkait.",
+      confirmText: "Ya, Hapus",
+      variant: "danger",
+    });
+    if (ok) {
       deleteMutation.mutate(id);
     }
   };

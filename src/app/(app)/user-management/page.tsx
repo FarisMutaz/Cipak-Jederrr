@@ -24,6 +24,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useConfirm } from "@/components/confirm-dialog";
 
 const userSchema = zod.object({
   name: zod.string().min(2, { message: "Nama minimal 2 karakter" }),
@@ -40,6 +41,7 @@ export default function UserManagementPage() {
   const queryClient = useQueryClient();
   const activeUser = session?.user as any;
   const activeUserRole = activeUser?.role || "KASIR";
+  const confirm = useConfirm();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
@@ -196,12 +198,18 @@ export default function UserManagementPage() {
     },
   });
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (id === activeUser.id) {
       triggerAlert("error", "Anda tidak dapat menghapus akun Anda sendiri");
       return;
     }
-    if (confirm("Apakah Anda yakin ingin menghapus pengguna ini? Pengguna tidak akan dapat masuk ke sistem lagi.")) {
+    const ok = await confirm({
+      title: "Hapus Pengguna",
+      message: "Apakah Anda yakin ingin menghapus pengguna ini? Pengguna tidak akan dapat masuk ke sistem lagi.",
+      confirmText: "Ya, Hapus",
+      variant: "danger",
+    });
+    if (ok) {
       deleteMutation.mutate(id);
     }
   };

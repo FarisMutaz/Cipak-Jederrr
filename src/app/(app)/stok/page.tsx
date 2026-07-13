@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { cn, formatDayDate } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { useConfirm } from "@/components/confirm-dialog";
 
 const adjustSchema = zod.object({
   type: zod.enum(["INITIAL", "IN", "OUT"]),
@@ -54,6 +55,7 @@ export default function StokPage() {
   const queryClient = useQueryClient();
   const user = session?.user as any;
   const userRole = user?.role || "KASIR";
+  const confirm = useConfirm();
   const userOutlets = user?.outlets || [];
   const activeOutletId = user?.activeOutletId;
 
@@ -241,12 +243,14 @@ export default function StokPage() {
     },
   });
 
-  const handleDeleteStock = (productId: string) => {
-    if (
-      confirm(
-        "Apakah Anda yakin ingin menghapus item stok ini? Seluruh data stok dan riwayat mutasi terkait item ini akan dihapus dari pandangan."
-      )
-    ) {
+  const handleDeleteStock = async (productId: string) => {
+    const ok = await confirm({
+      title: "Hapus Item Stok",
+      message: "Apakah Anda yakin ingin menghapus item stok ini? Seluruh data stok dan riwayat mutasi terkait item ini akan dihapus dari pandangan.",
+      confirmText: "Ya, Hapus",
+      variant: "danger",
+    });
+    if (ok) {
       deleteStockMutation.mutate(productId);
     }
   };
@@ -298,6 +302,43 @@ export default function StokPage() {
       minStock: limitValue,
     });
   };
+
+  // Mutation: Delete a stock movement (reverse stock)
+  const deleteMovementMutation = useMutation({
+    mutationFn: async (movementId: string) => {
+      const res = await fetch(`/api/stok/movements?id=${movementId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Gagal menghapus riwayat mutasi");
+      }
+      return res.json();
+    },
+    onSuccess: (res) => {
+      triggerAlert("success", res.message || "Riwayat mutasi berhasil dihapus!");
+      queryClient.invalidateQueries({ queryKey: ["movements-history"] });
+      queryClient.invalidateQueries({ queryKey: ["stocks-list"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (err: any) => {
+      triggerAlert("error", err.message);
+    },
+  });
+
+  const handleDeleteMovement = async (movementId: string, productName: string) => {
+    const ok = await confirm({
+      title: "Hapus Riwayat Mutasi",
+      message: `Apakah Anda yakin ingin menghapus riwayat mutasi "${productName}"? Stok akan disesuaikan secara otomatis.`,
+      confirmText: "Ya, Hapus",
+      variant: "danger",
+    });
+    if (ok) {
+      deleteMovementMutation.mutate(movementId);
+    }
+  };
+
+  const isOwnerOrDev = userRole === "OWNER" || userRole === "DEVELOPER";
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in relative">
@@ -544,6 +585,7 @@ export default function StokPage() {
                     <th className="py-3.5 px-4 text-center">Jumlah</th>
                     <th className="py-3.5 px-4">Operator</th>
                     <th className="py-3.5 px-4">Alasan / Catatan</th>
+                    {isOwnerOrDev && <th className="py-3.5 px-4 text-center">Aksi</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -586,6 +628,18 @@ export default function StokPage() {
                         </td>
                         <td className="py-3.5 px-4 text-gray-600 font-medium italic">{m.userName}</td>
                         <td className="py-3.5 px-4 text-gray-500 leading-normal">{m.notes}</td>
+                        {isOwnerOrDev && (
+                          <td className="py-3.5 px-4 text-center">
+                            <button
+                              onClick={() => handleDeleteMovement(m.id, m.productName)}
+                              disabled={deleteMovementMutation.isPending}
+                              className="p-1.5 hover:bg-primary/10 rounded-lg text-gray-400 hover:text-primary transition-colors cursor-pointer disabled:opacity-50"
+                              title="Hapus Riwayat"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}

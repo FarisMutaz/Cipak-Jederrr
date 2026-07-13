@@ -21,6 +21,7 @@ import {
   Building,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useConfirm } from "@/components/confirm-dialog";
 
 const outletSchema = zod.object({
   name: zod.string().min(2, { message: "Nama outlet minimal 2 karakter" }),
@@ -37,6 +38,7 @@ export default function OutletManagementPage() {
   const queryClient = useQueryClient();
   const activeUser = session?.user as any;
   const activeUserRole = activeUser?.role || "KASIR";
+  const confirm = useConfirm();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOutlet, setEditingOutlet] = useState<any>(null);
@@ -157,8 +159,14 @@ export default function OutletManagementPage() {
     },
   });
 
-  const handleDelete = (id: string) => {
-    if (confirm("Apakah Anda yakin ingin menghapus outlet ini? Tindakan ini tidak dapat dibatalkan.")) {
+  const handleDelete = async (id: string) => {
+    const ok = await confirm({
+      title: "Hapus Outlet",
+      message: "Apakah Anda yakin ingin menghapus outlet ini? Tindakan ini tidak dapat dibatalkan.",
+      confirmText: "Ya, Hapus",
+      variant: "danger",
+    });
+    if (ok) {
       deleteMutation.mutate(id);
     }
   };

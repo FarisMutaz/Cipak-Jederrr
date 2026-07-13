@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { cn, formatRupiah } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { useConfirm } from "@/components/confirm-dialog";
 
 const productSchema = zod.object({
   name: zod.string().min(2, { message: "Nama produk minimal 2 karakter" }),
@@ -46,6 +47,7 @@ export default function ProdukPage() {
   const queryClient = useQueryClient();
   const user = session?.user as any;
   const userRole = user?.role || "KASIR";
+  const confirm = useConfirm();
 
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
@@ -262,8 +264,14 @@ export default function ProdukPage() {
     },
   });
 
-  const handleDelete = (id: string) => {
-    if (confirm("Apakah Anda yakin ingin menghapus produk ini? Stok dan data transaksi lama tetap akan aman di sistem.")) {
+  const handleDelete = async (id: string) => {
+    const ok = await confirm({
+      title: "Hapus Produk",
+      message: "Apakah Anda yakin ingin menghapus produk ini? Stok dan data transaksi lama tetap akan aman di sistem.",
+      confirmText: "Ya, Hapus",
+      variant: "danger",
+    });
+    if (ok) {
       deleteMutation.mutate(id);
     }
   };

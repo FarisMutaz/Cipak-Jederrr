@@ -9,7 +9,11 @@ import { parse } from "pg-connection-string";
 const connectionString = process.env.DATABASE_URL || "";
 const parsedConfig = parse(connectionString);
 const pool = new pg.Pool({
-  ...parsedConfig,
+  host: parsedConfig.host || undefined,
+  port: parsedConfig.port ? parseInt(parsedConfig.port, 10) : undefined,
+  user: parsedConfig.user || undefined,
+  password: parsedConfig.password || undefined,
+  database: parsedConfig.database || undefined,
   ssl: connectionString.includes('sslmode=disable')
     ? false
     : { rejectUnauthorized: false }

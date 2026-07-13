@@ -20,6 +20,7 @@ import {
   Hash,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useConfirm } from "@/components/confirm-dialog";
 
 const settingsSchema = zod.object({
   storeName: zod.string().min(2, { message: "Nama usaha minimal 2 karakter" }),
@@ -35,6 +36,7 @@ export default function PengaturanPage() {
   const { data: session } = useSession();
   const user = session?.user as any;
   const userRole = user?.role || "KASIR";
+  const confirm = useConfirm();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -141,7 +143,12 @@ export default function PengaturanPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!confirm("Peringatan Kritis! Memulihkan database dari file cadangan akan menghapus seluruh data transaksi, stok, produk, dan outlet saat ini. Apakah Anda yakin ingin melanjutkan?")) {
+    if (!await confirm({
+      title: "Peringatan Kritis!",
+      message: "Memulihkan database dari file cadangan akan menghapus seluruh data transaksi, stok, produk, dan outlet saat ini. Apakah Anda yakin ingin melanjutkan?",
+      confirmText: "Ya, Pulihkan",
+      variant: "danger",
+    })) {
       e.target.value = ""; // clear file picker
       return;
     }

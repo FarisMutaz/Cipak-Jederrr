@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { formatRupiah, formatDate } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { useConfirm } from "@/components/confirm-dialog";
 
 // Zod schemas for modals
 const addStockSchema = zod.object({
@@ -56,6 +57,7 @@ export default function StokOpnamePage() {
   const userRole = user?.role || "KASIR";
   const userOutlets = user?.outlets || [];
   const activeOutletId = user?.activeOutletId;
+  const confirm = useConfirm();
 
   const { data: dbOutlets = [] } = useQuery({
     queryKey: ["outlets-dropdown-list", userRole],
@@ -292,6 +294,43 @@ export default function StokOpnamePage() {
       qtyPerUnit: qtyPerUnitValue,
     });
   };
+
+  // Mutation: Delete a movement from history (reverse stock)
+  const deleteMovementMutation = useMutation({
+    mutationFn: async (movementId: string) => {
+      const res = await fetch(`/api/stok-opname/movements?id=${movementId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Gagal menghapus riwayat mutasi");
+      }
+      return res.json();
+    },
+    onSuccess: (res) => {
+      triggerAlert("success", res.message || "Riwayat mutasi berhasil dihapus!");
+      queryClient.invalidateQueries({ queryKey: ["stok-opname-movements"] });
+      queryClient.invalidateQueries({ queryKey: ["stok-opname-list"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (err: any) => {
+      triggerAlert("error", err.message);
+    },
+  });
+
+  const handleDeleteMovement = async (movementId: string, itemName: string) => {
+    const ok = await confirm({
+      title: "Hapus Riwayat Mutasi",
+      message: `Apakah Anda yakin ingin menghapus riwayat mutasi "${itemName}"? Stok opname akan disesuaikan secara otomatis.`,
+      confirmText: "Ya, Hapus",
+      variant: "danger",
+    });
+    if (ok) {
+      deleteMovementMutation.mutate(movementId);
+    }
+  };
+
+  const isOwnerOrDev = userRole === "OWNER" || userRole === "DEVELOPER";
 
   // Filter stocks
   const filteredStocks = opStocks.filter((s: any) =>
@@ -558,8 +597,14 @@ export default function StokOpnamePage() {
                               {userRole !== "KASIR" && (
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    if (confirm(`Apakah Anda yakin ingin menghapus barang opname "${item.name}"?`)) {
+                                  onClick={async () => {
+                                    const ok = await confirm({
+                                      title: "Hapus Barang Opname",
+                                      message: `Apakah Anda yakin ingin menghapus barang opname "${item.name}"?`,
+                                      confirmText: "Ya, Hapus",
+                                      variant: "danger",
+                                    });
+                                    if (ok) {
                                       deleteMutation.mutate(item.id);
                                     }
                                   }}
@@ -603,6 +648,7 @@ export default function StokOpnamePage() {
                       <th className="py-2.5 px-3 text-center">Jumlah</th>
                       <th className="py-2.5 px-3">Keterangan</th>
                       <th className="py-2.5 px-3">Oleh</th>
+                      {isOwnerOrDev && <th className="py-2.5 px-3 text-center">Aksi</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -640,6 +686,18 @@ export default function StokOpnamePage() {
                             <User className="w-3.5 h-3.5 text-gray-400" />
                             <span>{log.userName}</span>
                           </td>
+                          {isOwnerOrDev && (
+                            <td className="py-3 px-3 text-center">
+                              <button
+                                onClick={() => handleDeleteMovement(log.id, log.itemName)}
+                                disabled={deleteMovementMutation.isPending}
+                                className="p-1.5 hover:bg-primary/10 rounded-lg text-gray-400 hover:text-primary transition-colors cursor-pointer disabled:opacity-50"
+                                title="Hapus Riwayat"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
