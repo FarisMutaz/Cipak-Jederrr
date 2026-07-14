@@ -22,6 +22,7 @@ import {
   Minus,
   Check,
   Trash2,
+  RefreshCw,
 } from "lucide-react";
 import { cn, formatDayDate } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -338,6 +339,44 @@ export default function StokPage() {
     }
   };
 
+  // Mutation: Reset all stock to 0
+  const resetStockMutation = useMutation({
+    mutationFn: async (outletId: string) => {
+      const res = await fetch("/api/stok", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "RESET_ALL", outletId }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Gagal me-reset stok");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      triggerAlert("success", data.message || "Seluruh stok produk berhasil di-reset menjadi 0!");
+      queryClient.invalidateQueries({ queryKey: ["stocks-list"] });
+      queryClient.invalidateQueries({ queryKey: ["movements-history"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (err: any) => {
+      triggerAlert("error", err.message);
+    },
+  });
+
+  const handleResetAllStock = async () => {
+    const ok = await confirm({
+      title: "Reset Semua Stok Produk",
+      message: "Apakah Anda yakin ingin me-reset seluruh stok produk (stok awal, masuk, keluar, terjual, dan sisa) di outlet ini menjadi 0? Seluruh riwayat mutasi di outlet ini juga akan dihapus secara permanen.",
+      confirmText: "Ya, Reset Semua",
+      confirmButtonClass: "bg-[#E84E4E] hover:bg-[#D33D3D] text-white",
+      variant: "danger",
+    });
+    if (ok && activeOutlet) {
+      resetStockMutation.mutate(activeOutlet);
+    }
+  };
+
   const isOwnerOrDev = userRole === "OWNER" || userRole === "DEVELOPER";
 
   return (
@@ -391,13 +430,23 @@ export default function StokPage() {
           </div>
 
           {(userRole === "OWNER" || userRole === "DEVELOPER") && (
-            <button
-              onClick={() => setIsAddStockModalOpen(true)}
-              className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              Tambah Stok Baru
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsAddStockModalOpen(true)}
+                className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                Tambah Stok Baru
+              </button>
+              <button
+                onClick={handleResetAllStock}
+                disabled={resetStockMutation.isPending}
+                className="px-4 py-2 bg-[#E84E4E] hover:bg-[#D33D3D] text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={cn("w-4 h-4", resetStockMutation.isPending && "animate-spin")} />
+                Reset Semua Stok
+              </button>
+            </div>
           )}
         </div>
 

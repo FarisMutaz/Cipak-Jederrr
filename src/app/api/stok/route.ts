@@ -224,3 +224,86 @@ export async function POST(req: Request) {
     );
   }
 }
+
+// PATCH /api/stok - Reset all stock counters to 0 for an outlet (Owner & Developer only)
+export async function PATCH(req: Request) {
+  const session = await auth();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const user = session.user as any;
+  if (user.role !== "DEVELOPER" && user.role !== "OWNER") {
+    return NextResponse.json({ error: "Forbidden: Owner/Developer only" }, { status: 403 });
+  }
+
+  try {
+    const body = await req.json();
+    const { action, outletId } = body;
+
+    if (action !== "RESET_ALL") {
+      return NextResponse.json({ error: "Aksi tidak dikenal" }, { status: 400 });
+    }
+
+    if (!outletId) {
+      return NextResponse.json({ error: "Outlet ID harus ditentukan" }, { status: 400 });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Find all stocks in this outlet that are not deleted
+      const stocks = await tx.stock.findMany({
+        where: {
+          outletId,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+
+      const stockIds = stocks.map((s) => s.id);
+
+      if (stockIds.length > 0) {
+        // Delete all movement logs for these stocks
+        await tx.stockMovement.deleteMany({
+          where: {
+            stockId: { in: stockIds },
+          },
+        });
+
+        // Reset all stock counters to 0
+        await tx.stock.updateMany({
+          where: {
+            id: { in: stockIds },
+          },
+          data: {
+            initialStock: 0,
+            stockIn: 0,
+            stockOut: 0,
+            sold: 0,
+            quantity: 0,
+          },
+        });
+      }
+
+      // Log Audit
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          action: "UPDATE",
+          table: "stocks",
+          recordId: outletId,
+          details: JSON.stringify({ action: "RESET_ALL", outletId }),
+        },
+      });
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "Seluruh stok produk di outlet ini berhasil di-reset menjadi 0!",
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: "Gagal me-reset stok: " + error.message },
+      { status: 500 }
+    );
+  }
+}
