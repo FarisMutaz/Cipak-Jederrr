@@ -72,16 +72,8 @@ export async function POST(req: Request) {
         });
       }
 
-      // Record Stock Movement log
-      const movement = await tx.stockMovement.create({
-        data: {
-          stockId,
-          type: mType,
-          quantity: logQty,
-          notes: notes || (type === "INITIAL" ? "Penyesuaian Stok Awal" : type === "IN" ? "Penyesuaian Stok Masuk" : type === "OUT" ? "Penyesuaian Stok Keluar" : `Penyesuaian Manual (${type})`),
-          userId: user.id,
-        },
-      });
+      // Per user request, manual stock adjustments are not recorded in the Stock Movement log/history
+      const movement = null;
 
       // Audit log
       await tx.auditLog.create({
