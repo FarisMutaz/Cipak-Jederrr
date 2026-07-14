@@ -411,37 +411,35 @@ export default function KasirPage() {
                 </p>
               </div>
             </div>
-            <button
-              onClick={async () => {
-                try {
-                  const res = await fetch("/api/laporan/session", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      outletId: activeOutlet,
-                      date: todayStr,
-                      action: "OPEN",
-                    }),
-                  });
-                  if (res.ok) {
-                    refetchSession();
-                    triggerAlert("success", "Laporan harian berhasil dibuka!");
-                  } else {
-                    const err = await res.json();
-                    triggerAlert("error", err.error || "Gagal membuka laporan");
+            {sessionData.status !== "CLOSED" && (
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch("/api/laporan/session", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        outletId: activeOutlet,
+                        date: todayStr,
+                        action: "OPEN",
+                      }),
+                    });
+                    if (res.ok) {
+                      refetchSession();
+                      triggerAlert("success", "Laporan harian berhasil dibuka!");
+                    } else {
+                      const err = await res.json();
+                      triggerAlert("error", err.error || "Gagal membuka laporan");
+                    }
+                  } catch (e) {
+                    triggerAlert("error", "Koneksi gagal");
                   }
-                } catch (e) {
-                  triggerAlert("error", "Koneksi gagal");
-                }
-              }}
-              className={`px-4 py-2 text-white font-extrabold text-xs rounded-xl shadow-sm cursor-pointer transition-all active:scale-95 shrink-0 ${
-                sessionData.status === "CLOSED"
-                  ? "bg-red-600 hover:bg-red-700"
-                  : "bg-amber-600 hover:bg-amber-700"
-              }`}
-            >
-              {sessionData.status === "CLOSED" ? "Buka Kembali Laporan" : "Buka Laporan Hari Ini"}
-            </button>
+                }}
+                className="px-4 py-2 text-white font-extrabold text-xs rounded-xl shadow-sm cursor-pointer transition-all active:scale-95 shrink-0 bg-amber-600 hover:bg-amber-700"
+              >
+                Buka Laporan Hari Ini
+              </button>
+            )}
           </div>
         )}
 

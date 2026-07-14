@@ -269,6 +269,10 @@ export default function DashboardPage() {
               >
                 {isUpdatingSession ? "Loading..." : "Tutup Laporan Hari Ini"}
               </button>
+            ) : sessionData.status === "CLOSED" ? (
+              <span className="px-3 py-1.5 bg-gray-100 text-gray-400 border border-gray-200 rounded-xl text-xs font-bold italic">
+                Sesi Hari Ini Selesai
+              </span>
             ) : (
               <button
                 disabled={isUpdatingSession}

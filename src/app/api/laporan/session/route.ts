@@ -84,12 +84,29 @@ export async function POST(req: Request) {
 
     if (action === "OPEN") {
       if (reportSession) {
+        if (reportSession.status === "CLOSED") {
+          return NextResponse.json(
+            { error: "Laporan untuk hari ini sudah ditutup dan tidak dapat dibuka kembali." },
+            { status: 400 }
+          );
+        }
+        if (reportSession.status === "OPEN") {
+          return NextResponse.json(
+            { error: "Laporan hari ini sudah dalam keadaan terbuka." },
+            { status: 400 }
+          );
+        }
+      }
+
+      if (reportSession) {
         result = await prisma.dailyReportSession.update({
           where: { id: reportSession.id },
           data: {
             status: "OPEN",
             openedAt: new Date(),
             openedById: userId,
+            closedAt: null,
+            closedById: null,
           },
         });
       } else {
@@ -105,26 +122,27 @@ export async function POST(req: Request) {
       }
     } else {
       // CLOSE
-      if (reportSession) {
-        result = await prisma.dailyReportSession.update({
-          where: { id: reportSession.id },
-          data: {
-            status: "CLOSED",
-            closedAt: new Date(),
-            closedById: userId,
-          },
-        });
-      } else {
-        result = await prisma.dailyReportSession.create({
-          data: {
-            outletId,
-            date,
-            status: "CLOSED",
-            closedAt: new Date(),
-            closedById: userId,
-          },
-        });
+      if (!reportSession) {
+        return NextResponse.json(
+          { error: "Laporan harus dibuka terlebih dahulu sebelum bisa ditutup." },
+          { status: 400 }
+        );
       }
+      if (reportSession.status === "CLOSED") {
+        return NextResponse.json(
+          { error: "Laporan hari ini sudah ditutup dan tidak bisa ditutup kembali." },
+          { status: 400 }
+        );
+      }
+
+      result = await prisma.dailyReportSession.update({
+        where: { id: reportSession.id },
+        data: {
+          status: "CLOSED",
+          closedAt: new Date(),
+          closedById: userId,
+        },
+      });
     }
 
     return NextResponse.json({ success: true, session: result });
