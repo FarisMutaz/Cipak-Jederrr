@@ -59,15 +59,15 @@ export default auth((req) => {
     return NextResponse.redirect(new URL("/dashboard", nextUrl));
   }
 
-  if (pathname.startsWith("/stok-opname") && userRole !== "DEVELOPER" && userRole !== "OWNER" && userRole !== "KOORLAP") {
+  if (pathname.startsWith("/stok-opname") && userRole !== "DEVELOPER" && userRole !== "OWNER" && userRole !== "KOORLAP" && userRole !== "KASIR") {
     return NextResponse.redirect(new URL("/dashboard", nextUrl));
   }
 
-  if (pathname.startsWith("/stok") && userRole !== "DEVELOPER" && userRole !== "OWNER" && userRole !== "KOORLAP") {
+  if (pathname.startsWith("/stok") && userRole !== "DEVELOPER" && userRole !== "OWNER" && userRole !== "KOORLAP" && userRole !== "KASIR") {
     return NextResponse.redirect(new URL("/dashboard", nextUrl));
   }
 
-  if (pathname.startsWith("/input-stok") && userRole !== "DEVELOPER" && userRole !== "OWNER" && userRole !== "KOORLAP") {
+  if (pathname.startsWith("/input-stok") && userRole !== "DEVELOPER" && userRole !== "OWNER") {
     return NextResponse.redirect(new URL("/dashboard", nextUrl));
   }
 

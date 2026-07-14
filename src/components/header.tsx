@@ -25,7 +25,7 @@ export default function Header({ onMenuToggle }: { onMenuToggle?: () => void }) 
     if (pathname.startsWith("/kasir")) return "Kasir";
     if (pathname.startsWith("/pengeluaran")) return "Pengeluaran";
     if (pathname.startsWith("/produk")) return "Produk";
-    if (pathname.startsWith("/stok-opname")) return "Stok Opname";
+    if (pathname.startsWith("/stok-opname")) return "Perlengkapan";
     if (pathname.startsWith("/stok")) return "Stok Produk";
     if (pathname.startsWith("/keuangan")) return "Keuangan";
     if (pathname.startsWith("/laporan")) return "Laporan";

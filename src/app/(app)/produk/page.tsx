@@ -784,9 +784,9 @@ export default function ProdukPage() {
                       </div>
                     )}
 
-                    {/* Resep Bahan Operasional (Stok Opname) */}
+                    {/* Resep Bahan Operasional (Perlengkapan) */}
                     <div className="flex flex-col gap-2.5 border-t border-border-custom pt-3.5">
-                      <label className="text-[10px] font-extrabold text-purple-600 uppercase tracking-wide">Bahan Operasional (Stok Opname) yang Dikurangi</label>
+                      <label className="text-[10px] font-extrabold text-purple-600 uppercase tracking-wide">Bahan Operasional (Perlengkapan) yang Dikurangi</label>
                       
                       {/* List of currently selected ingredients */}
                       {selectedOpStocks.length > 0 ? (

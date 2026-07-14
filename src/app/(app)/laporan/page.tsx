@@ -8,7 +8,9 @@ import {
   Loader2,
   Calendar,
   Building,
+  Image as ImageIcon,
 } from "lucide-react";
+import html2canvas from "html2canvas-pro";
 import { formatRupiah, formatDayDate } from "@/lib/utils";
 
 export default function LaporanPage() {
@@ -67,8 +69,33 @@ export default function LaporanPage() {
     }
   }, [activeOutlet, reportDate]);
 
-  const handlePrint = () => {
-    window.print();
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleDownloadImage = async (format: "png" | "jpg") => {
+    const element = document.querySelector(".print-container") as HTMLElement;
+    if (!element || !report) return;
+
+    setIsExporting(true);
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+      });
+
+      const mimeType = format === "png" ? "image/png" : "image/jpeg";
+      const fileExtension = format === "png" ? "png" : "jpg";
+      const dataUrl = canvas.toDataURL(mimeType, 1.0);
+
+      const link = document.createElement("a");
+      link.download = `Laporan_${report.outletName || "Outlet"}_${reportDate}.${fileExtension}`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error("Gagal mengunduh gambar laporan:", err);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -106,15 +133,25 @@ export default function LaporanPage() {
           )}
         </div>
 
-        {/* Print Button */}
-        <button
-          onClick={handlePrint}
-          disabled={isLoading || !report}
-          className="px-4 py-2.5 bg-primary hover:bg-primary-dark text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-md shadow-primary/20 hover:shadow-lg transition-all duration-200 cursor-pointer disabled:opacity-50"
-        >
-          <Printer className="w-4 h-4" />
-          <span>Cetak Laporan (A4)</span>
-        </button>
+        {/* Export Buttons */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => handleDownloadImage("png")}
+            disabled={isLoading || !report || isExporting}
+            className="px-4 py-2.5 bg-primary hover:bg-primary-dark text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-md shadow-primary/20 hover:shadow-lg transition-all duration-200 cursor-pointer disabled:opacity-50"
+          >
+            {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
+            <span>Unduh PNG</span>
+          </button>
+          <button
+            onClick={() => handleDownloadImage("jpg")}
+            disabled={isLoading || !report || isExporting}
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-md shadow-emerald-600/20 hover:shadow-lg transition-all duration-200 cursor-pointer disabled:opacity-50"
+          >
+            {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
+            <span>Unduh JPG</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Document Preview Container */}

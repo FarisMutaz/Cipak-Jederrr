@@ -205,7 +205,7 @@ export default function PengeluaranPage() {
   const handleDeleteSelected = async () => {
     const ok = await confirm({
       title: "Hapus Pengeluaran Terpilih",
-      message: `Apakah Anda yakin ingin menghapus ${selectedIds.length} catatan pengeluaran terpilih secara massal? Tindakan ini juga akan membalikkan penambahan stok opname terkait.`,
+      message: `Apakah Anda yakin ingin menghapus ${selectedIds.length} catatan pengeluaran terpilih secara massal? Tindakan ini juga akan membalikkan penambahan stok perlengkapan terkait.`,
       confirmText: "Ya, Hapus Semua",
       variant: "danger",
     });
@@ -228,7 +228,7 @@ export default function PengeluaranPage() {
   const handleDelete = async (id: string) => {
     const ok = await confirm({
       title: "Hapus Pengeluaran",
-      message: "Apakah Anda yakin ingin menghapus catatan pengeluaran ini? Tindakan ini juga akan membalikkan penambahan stok opname terkait.",
+      message: "Apakah Anda yakin ingin menghapus catatan pengeluaran ini? Tindakan ini juga akan membalikkan penambahan stok perlengkapan terkait.",
       confirmText: "Ya, Hapus",
       variant: "danger",
     });
@@ -304,7 +304,7 @@ export default function PengeluaranPage() {
 
           {/* Item Selection Dropdown */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Pilih Barang / Stok Opname</label>
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Pilih Barang / Perlengkapan</label>
             <select
               value={selectedItemId}
               onChange={(e) => {

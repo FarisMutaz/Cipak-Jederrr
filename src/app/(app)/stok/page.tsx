@@ -513,7 +513,7 @@ export default function StokPage() {
                     <th className="py-3.5 px-4 text-center">Stok Akhir</th>
                     <th className="py-3.5 px-4 text-center">Limit Peringatan</th>
                     <th className="py-3.5 px-4 text-center">Status</th>
-                    <th className="py-3.5 px-4 text-center">Aksi</th>
+                    {isOwnerOrDev && <th className="py-3.5 px-4 text-center">Aksi</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -562,28 +562,28 @@ export default function StokPage() {
                             </span>
                           )}
                         </td>
-                        <td className="py-3.5 px-4">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => {
-                                setAdjustingStock(s);
-                                reset({ type: "IN", qty: 0, notes: "" });
-                              }}
-                              className="px-2.5 py-1.5 bg-primary hover:bg-primary-dark text-white rounded-lg text-[10px] font-bold shadow-sm transition-colors cursor-pointer"
-                            >
-                              Sesuaikan Stok
-                            </button>
-                            <button
-                              onClick={() => {
-                                setLimitingStock(s);
-                                setLimitValue(s.minStock);
-                              }}
-                              className="p-1.5 border border-border-custom hover:border-primary/20 text-gray-400 hover:text-primary rounded-lg transition-colors cursor-pointer"
-                              title="Ubah Limit Peringatan"
-                            >
-                              <Settings className="w-3.5 h-3.5" />
-                            </button>
-                            {(userRole === "OWNER" || userRole === "DEVELOPER") && (
+                        {isOwnerOrDev && (
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setAdjustingStock(s);
+                                  reset({ type: "IN", qty: 0, notes: "" });
+                                }}
+                                className="px-2.5 py-1.5 bg-primary hover:bg-primary-dark text-white rounded-lg text-[10px] font-bold shadow-sm transition-colors cursor-pointer"
+                              >
+                                Sesuaikan Stok
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setLimitingStock(s);
+                                  setLimitValue(s.minStock);
+                                }}
+                                className="p-1.5 border border-border-custom hover:border-primary/20 text-gray-400 hover:text-primary rounded-lg transition-colors cursor-pointer"
+                                title="Ubah Limit Peringatan"
+                              >
+                                <Settings className="w-3.5 h-3.5" />
+                              </button>
                               <button
                                 onClick={() => handleDeleteStock(s.product.id)}
                                 className="p-1.5 border border-[#E84E4E]/20 hover:border-[#E84E4E]/50 text-[#E84E4E]/60 hover:text-[#E84E4E] rounded-lg transition-colors cursor-pointer"
@@ -591,9 +591,9 @@ export default function StokPage() {
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
-                            )}
-                          </div>
-                        </td>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}

@@ -78,7 +78,7 @@ export async function POST(req: Request) {
   }
 
   const user = session.user as any;
-  if (user.role !== "DEVELOPER" && user.role !== "OWNER" && user.role !== "KOORLAP") {
+  if (user.role !== "DEVELOPER" && user.role !== "OWNER") {
     return NextResponse.json({ error: "Forbidden: Akses tidak diizinkan" }, { status: 403 });
   }
 
@@ -175,7 +175,7 @@ export async function PUT(req: Request) {
   }
 
   const user = session.user as any;
-  if (user.role !== "DEVELOPER" && user.role !== "OWNER" && user.role !== "KOORLAP") {
+  if (user.role !== "DEVELOPER" && user.role !== "OWNER") {
     return NextResponse.json({ error: "Forbidden: Akses tidak diizinkan" }, { status: 403 });
   }
 
@@ -220,7 +220,7 @@ export async function DELETE(req: Request) {
   }
 
   const user = session.user as any;
-  if (user.role !== "DEVELOPER" && user.role !== "OWNER" && user.role !== "KOORLAP") {
+  if (user.role !== "DEVELOPER" && user.role !== "OWNER") {
     return NextResponse.json({ error: "Forbidden: Akses tidak diizinkan" }, { status: 403 });
   }
 

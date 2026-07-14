@@ -100,6 +100,7 @@ export async function GET(req: Request) {
     let e3 = 0; // Total Penjualan (e1 + e2)
     let h1 = 0; // Total Bawa Cipak (a1 + b1)
     let h2 = 0; // Total Bawa Add-on (a2 + b2)
+    let totalJualGaji = 0;
 
     for (const stockItem of stocks) {
       const product = stockItem.product;
@@ -131,6 +132,7 @@ export async function GET(req: Request) {
         "cirambay": 5000,
         "cimol bojot": 5000,
         "cimol keju": 5000,
+        "cimol isi keju": 5000,
         "kuah creamy": 5000,
         "chili oil": 2000,
         "bojot": 3000,
@@ -160,6 +162,18 @@ export async function GET(req: Request) {
         jumlah,
       };
 
+      // Check if this item is in the employee salary calculation (Cimol Bojot, Cipak Koceak, Cirambay, Cimol Isi Keju, Kuah Creamy)
+      const isGajiItem =
+        lowerName.includes("cimol bojot") ||
+        lowerName.includes("cipak koceak") ||
+        lowerName.includes("cirambay") ||
+        lowerName.includes("cimol isi keju") ||
+        lowerName.includes("kuah creamy");
+
+      if (isGajiItem) {
+        totalJualGaji += jual;
+      }
+
       // Classification:
       // Category 1 (Cipak/Cimol): Name contains "cipak", "cimol", "cirambay", or category name is "Cimol Isi"/"Cipak Ori"
       // Category 2 (Add-on): Other products (like "Tambahan" or containing "Kuah", "Chili Oil", "Bojot", etc.)
@@ -186,8 +200,9 @@ export async function GET(req: Request) {
     }
 
     // Calculations for Proyeksi Keuangan
-    // F1 = (d3 * 1000) + (d4 * 1000) + 10000
-    const f1 = (d3 * 1000) + (d4 * 1000) + 10000;
+    // F1 = Gaji Karyawan: 70000 base, plus 1000 per porsi bonus if total > 60 porsi
+    const bonusGaji = Math.max(0, totalJualGaji - 60) * 1000;
+    const f1 = 70000 + bonusGaji;
     // F2 = d3 * 1250
     const f2 = d3 * 1250;
     // F3 = (d3 + d4) * 1500
@@ -208,7 +223,7 @@ export async function GET(req: Request) {
     }
 
     // G3 = Gaji Pokok (Fixed component of F1)
-    const g3 = 10000;
+    const g3 = 70000;
 
     // G4 = Total Operasional (Sum of expenses today)
     const g4 = expenses.reduce((sum, e) => sum + e.amount, 0);

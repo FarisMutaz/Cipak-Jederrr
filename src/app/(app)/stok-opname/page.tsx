@@ -321,7 +321,7 @@ export default function StokOpnamePage() {
   const handleDeleteMovement = async (movementId: string, itemName: string) => {
     const ok = await confirm({
       title: "Hapus Riwayat Mutasi",
-      message: `Apakah Anda yakin ingin menghapus riwayat mutasi "${itemName}"? Stok opname akan disesuaikan secara otomatis.`,
+      message: `Apakah Anda yakin ingin menghapus riwayat mutasi "${itemName}"? Stok perlengkapan akan disesuaikan secara otomatis.`,
       confirmText: "Ya, Hapus",
       variant: "danger",
     });
@@ -373,7 +373,7 @@ export default function StokOpnamePage() {
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex items-center gap-2 text-text-custom">
             <Boxes className="w-5 h-5 text-primary" />
-            <h2 className="font-extrabold text-base tracking-tight">Stok Opname Bahan Operasional</h2>
+            <h2 className="font-extrabold text-base tracking-tight">Perlengkapan Bahan Operasional</h2>
           </div>
 
           {/* Active Outlet Selection */}
@@ -440,7 +440,7 @@ export default function StokOpnamePage() {
           lowStockItems > 0 ? "bg-red-50/50 border-red-100" : "bg-white border-border-custom"
         }`}>
           <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Perlu Restock / Opname</span>
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Perlu Restock / Penyesuaian</span>
             <span className={`text-xl font-black ${
               lowStockItems > 0 ? "text-primary" : "text-text-custom"
             }`}>{lowStockItems} <span className="text-xs font-bold text-gray-400">item</span></span>
@@ -484,7 +484,7 @@ export default function StokOpnamePage() {
                 />
               </div>
 
-              {userRole !== "KASIR" && (
+              {isOwnerOrDev && (
                 <div className="flex items-center gap-2 self-start sm:self-auto">
                   <button
                     onClick={() => {
@@ -505,7 +505,7 @@ export default function StokOpnamePage() {
                     className="py-2 px-3.5 bg-primary hover:bg-primary-dark text-white rounded-xl text-xs font-extrabold shadow-md shadow-primary/20 hover:shadow-lg transition-all duration-150 flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Plus className="w-4 h-4" />
-                    <span>Tambah Barang Opname</span>
+                    <span>Tambah Barang Perlengkapan</span>
                   </button>
                 </div>
               )}
@@ -520,7 +520,7 @@ export default function StokOpnamePage() {
                 </div>
               ) : filteredStocks.length === 0 ? (
                 <div className="text-center py-20 text-xs text-gray-400 bg-bg-custom rounded-xl border border-border-custom border-dashed">
-                  {searchQuery ? "Tidak ada barang opname yang cocok dengan pencarian." : "Belum ada barang opname untuk outlet ini."}
+                  {searchQuery ? "Tidak ada barang perlengkapan yang cocok dengan pencarian." : "Belum ada barang perlengkapan untuk outlet ini."}
                 </div>
               ) : (
                 <table className="w-full text-left text-xs">
@@ -532,7 +532,7 @@ export default function StokOpnamePage() {
                       <th className="py-2.5 px-3 text-center text-blue-600 font-extrabold">Stok</th>
                       <th className="py-2.5 px-3 text-center">Batas Limit</th>
                       <th className="py-2.5 px-3 text-center">Status</th>
-                      <th className="py-2.5 px-3 text-center">Aksi</th>
+                      {isOwnerOrDev && <th className="py-2.5 px-3 text-center">Aksi</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -565,42 +565,42 @@ export default function StokOpnamePage() {
                               {isOut ? "Habis" : isLow ? "Perlu Restok" : "Aman"}
                             </span>
                           </td>
-                          <td className="py-3 px-3 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              {/* Adjust Stock Button */}
-                              <button
-                                onClick={() => {
-                                  setSelectedStock(item);
-                                  adjustForm.reset({ type: "IN", qty: 1, notes: "", useBuyUnit: false, qtyPerUnit: item.qtyPerUnit || 1 });
-                                  setIsAdjustOpen(true);
-                                }}
-                                className="px-2 py-1 bg-primary/5 hover:bg-primary/10 text-primary border border-primary/15 rounded-lg text-[10px] font-extrabold transition-colors cursor-pointer"
-                              >
-                                Sesuaikan
-                              </button>
+                          {isOwnerOrDev && (
+                            <td className="py-3 px-3 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                {/* Adjust Stock Button */}
+                                <button
+                                  onClick={() => {
+                                    setSelectedStock(item);
+                                    adjustForm.reset({ type: "IN", qty: 1, notes: "", useBuyUnit: false, qtyPerUnit: item.qtyPerUnit || 1 });
+                                    setIsAdjustOpen(true);
+                                  }}
+                                  className="px-2 py-1 bg-primary/5 hover:bg-primary/10 text-primary border border-primary/15 rounded-lg text-[10px] font-extrabold transition-colors cursor-pointer"
+                                >
+                                  Sesuaikan
+                                </button>
 
-                              {/* Edit Limit */}
-                              <button
-                                onClick={() => {
-                                  setSelectedStock(item);
-                                  setMinStockValue(item.minStock);
-                                  setQtyPerUnitValue(item.qtyPerUnit || 1);
-                                  setIsMinStockOpen(true);
-                                }}
-                                className="p-1 hover:bg-gray-100 text-gray-400 hover:text-text-custom rounded-lg border border-transparent hover:border-gray-200 transition-all cursor-pointer"
-                                title="Atur Batas Limit & Isi per Unit"
-                              >
-                                <Settings2 className="w-3.5 h-3.5" />
-                              </button>
+                                {/* Edit Limit */}
+                                <button
+                                  onClick={() => {
+                                    setSelectedStock(item);
+                                    setMinStockValue(item.minStock);
+                                    setQtyPerUnitValue(item.qtyPerUnit || 1);
+                                    setIsMinStockOpen(true);
+                                  }}
+                                  className="p-1 hover:bg-gray-100 text-gray-400 hover:text-text-custom rounded-lg border border-transparent hover:border-gray-200 transition-all cursor-pointer"
+                                  title="Atur Batas Limit & Isi per Unit"
+                                >
+                                  <Settings2 className="w-3.5 h-3.5" />
+                                </button>
 
-                              {/* Delete Button */}
-                              {userRole !== "KASIR" && (
+                                {/* Delete Button */}
                                 <button
                                   type="button"
                                   onClick={async () => {
                                     const ok = await confirm({
-                                      title: "Hapus Barang Opname",
-                                      message: `Apakah Anda yakin ingin menghapus barang opname "${item.name}"?`,
+                                      title: "Hapus Barang Perlengkapan",
+                                      message: `Apakah Anda yakin ingin menghapus barang perlengkapan "${item.name}"?`,
                                       confirmText: "Ya, Hapus",
                                       variant: "danger",
                                     });
@@ -610,13 +610,13 @@ export default function StokOpnamePage() {
                                   }}
                                   disabled={deleteMutation.isPending}
                                   className="p-1 hover:bg-red-50 text-gray-400 hover:text-red-600 rounded-lg border border-transparent hover:border-red-200 transition-all cursor-pointer disabled:opacity-50"
-                                  title="Hapus Barang Opname"
+                                  title="Hapus Barang Perlengkapan"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
-                              )}
-                            </div>
-                          </td>
+                              </div>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
@@ -636,7 +636,7 @@ export default function StokOpnamePage() {
                 </div>
               ) : movements.length === 0 ? (
                 <div className="text-center py-20 text-xs text-gray-400 bg-bg-custom rounded-xl border border-border-custom border-dashed">
-                  Belum ada riwayat mutasi opname untuk outlet ini.
+                  Belum ada riwayat mutasi perlengkapan untuk outlet ini.
                 </div>
               ) : (
                 <table className="w-full text-left text-xs">
@@ -720,7 +720,7 @@ export default function StokOpnamePage() {
             <div className="flex items-center justify-between pb-3 border-b border-border-custom">
               <div className="flex items-center gap-2 text-text-custom">
                 <PlusCircle className="w-5 h-5 text-primary" />
-                <h3 className="font-extrabold text-sm">Tambah Barang Opname Baru</h3>
+                <h3 className="font-extrabold text-sm">Tambah Barang Perlengkapan Baru</h3>
               </div>
               <button
                 onClick={() => setIsAddOpen(false)}
@@ -835,7 +835,7 @@ export default function StokOpnamePage() {
           >
             <div className="flex items-center justify-between pb-3 border-b border-border-custom">
               <div className="flex flex-col gap-0.5">
-                <h3 className="font-extrabold text-sm text-text-custom">Sesuaikan Stok Operasional</h3>
+                <h3 className="font-extrabold text-sm text-text-custom">Sesuaikan Stok Perlengkapan</h3>
                 <span className="text-[10px] font-bold text-gray-400 uppercase">
                   {selectedStock.name} ({selectedStock.quantity} {selectedStock.unit} Tersisa)
                 </span>
@@ -959,7 +959,7 @@ export default function StokOpnamePage() {
           >
             <div className="flex items-center justify-between pb-3 border-b border-border-custom">
               <div className="flex flex-col gap-0.5">
-                <h3 className="font-extrabold text-sm text-text-custom">Pengaturan Barang Opname</h3>
+                <h3 className="font-extrabold text-sm text-text-custom">Pengaturan Barang Perlengkapan</h3>
                 <span className="text-[10px] font-bold text-gray-400 uppercase">{selectedStock.name}</span>
               </div>
               <button
@@ -1037,7 +1037,7 @@ export default function StokOpnamePage() {
             <div className="flex items-center justify-between pb-3 border-b border-border-custom">
               <div className="flex items-center gap-2 text-text-custom">
                 <Copy className="w-5 h-5 text-primary" />
-                <h3 className="font-extrabold text-sm">Salin Barang Opname dari Outlet Lain</h3>
+                <h3 className="font-extrabold text-sm">Salin Barang Perlengkapan dari Outlet Lain</h3>
               </div>
               <button
                 onClick={() => setIsCopyOpen(false)}

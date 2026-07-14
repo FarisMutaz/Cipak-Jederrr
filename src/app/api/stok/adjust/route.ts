@@ -10,7 +10,7 @@ export async function POST(req: Request) {
   }
 
   const user = session.user as any;
-  if (user.role !== "DEVELOPER" && user.role !== "OWNER" && user.role !== "KOORLAP") {
+  if (user.role !== "DEVELOPER" && user.role !== "OWNER") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
