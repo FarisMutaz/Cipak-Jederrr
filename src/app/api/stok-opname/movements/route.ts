@@ -76,57 +76,81 @@ export async function DELETE(req: Request) {
   const ids = id.split(",");
 
   try {
-    await prisma.$transaction(async (tx) => {
-      for (const singleId of ids) {
-        // Find the movement first
-        const movement = await tx.operationalStockMovement.findUnique({
-          where: { id: singleId },
-          include: { operationalStock: true },
-        });
-
-        if (!movement) {
-          continue;
-        }
-
-        // Reverse the stock effect
-        const stock = movement.operationalStock;
-        let updateData: any = {};
-
-        if (movement.type === "IN") {
-          // Was an IN movement, reverse: subtract from stockIn and quantity
-          updateData = {
-            stockIn: { decrement: movement.quantity },
-            quantity: { decrement: movement.quantity },
-          };
-        } else if (movement.type === "OUT") {
-          // Was an OUT movement, reverse: subtract from stockOut and add back to quantity
-          updateData = {
-            stockOut: { decrement: movement.quantity },
-            quantity: { increment: movement.quantity },
-          };
-        } else if (movement.type === "ADJUSTMENT") {
-          // Was a set initial stock adjustment
-          const currentInitial = stock.initialStock;
-          const newInitial = currentInitial - movement.quantity;
-          updateData = {
-            initialStock: newInitial,
-            quantity: { decrement: movement.quantity },
-          };
-        }
-
-        // Execute updates
-        await tx.operationalStock.update({
-          where: { id: stock.id },
-          data: updateData,
-        });
-
-        await tx.operationalStockMovement.delete({
-          where: { id: singleId },
-        });
-      }
+    // 1. Fetch all movements first in a single query
+    const movements = await prisma.operationalStockMovement.findMany({
+      where: { id: { in: ids } },
+      include: { operationalStock: true },
     });
 
-    return NextResponse.json({ message: ids.length > 1 ? "Riwayat mutasi opname terpilih berhasil dihapus & stok telah disesuaikan!" : "Riwayat mutasi opname berhasil dihapus & stok telah disesuaikan!" });
+    if (movements.length === 0) {
+      return NextResponse.json({ success: true, message: "Tidak ada riwayat mutasi yang perlu dihapus" });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Aggregate stock adjustments in memory
+      const stockAdjustments: Record<
+        string,
+        {
+          id: string;
+          initialStockDelta: number;
+          stockInDelta: number;
+          stockOutDelta: number;
+          quantityDelta: number;
+        }
+      > = {};
+
+      for (const m of movements) {
+        const stock = m.operationalStock;
+        if (!stock) continue;
+
+        if (!stockAdjustments[stock.id]) {
+          stockAdjustments[stock.id] = {
+            id: stock.id,
+            initialStockDelta: 0,
+            stockInDelta: 0,
+            stockOutDelta: 0,
+            quantityDelta: 0,
+          };
+        }
+
+        const adj = stockAdjustments[stock.id];
+
+        if (m.type === "IN") {
+          adj.stockInDelta -= m.quantity;
+          adj.quantityDelta -= m.quantity;
+        } else if (m.type === "OUT") {
+          adj.stockOutDelta -= m.quantity;
+          adj.quantityDelta += m.quantity;
+        } else if (m.type === "ADJUSTMENT") {
+          adj.initialStockDelta -= m.quantity;
+          adj.quantityDelta -= m.quantity;
+        }
+      }
+
+      // Execute aggregated updates for affected operational stocks
+      for (const adj of Object.values(stockAdjustments)) {
+        await tx.operationalStock.update({
+          where: { id: adj.id },
+          data: {
+            initialStock: adj.initialStockDelta !== 0 ? { increment: adj.initialStockDelta } : undefined,
+            stockIn: adj.stockInDelta !== 0 ? { increment: adj.stockInDelta } : undefined,
+            stockOut: adj.stockOutDelta !== 0 ? { increment: adj.stockOutDelta } : undefined,
+            quantity: adj.quantityDelta !== 0 ? { increment: adj.quantityDelta } : undefined,
+          },
+        });
+      }
+
+      // 2. Delete all movements in bulk
+      await tx.operationalStockMovement.deleteMany({
+        where: { id: { in: ids } },
+      });
+    });
+
+    return NextResponse.json({
+      message: ids.length > 1
+        ? "Riwayat mutasi opname terpilih berhasil dihapus & stok telah disesuaikan!"
+        : "Riwayat mutasi opname berhasil dihapus & stok telah disesuaikan!",
+    });
   } catch (error: any) {
     return NextResponse.json(
       { error: "Gagal menghapus riwayat mutasi: " + error.message },

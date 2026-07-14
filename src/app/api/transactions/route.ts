@@ -400,188 +400,250 @@ export async function DELETE(req: Request) {
   const ids = id.split(",");
 
   try {
+    // 1. Fetch all transactions and items first in a single query
+    const transactions = await prisma.transaction.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+      include: {
+        items: {
+          include: {
+            product: true,
+          },
+        },
+      },
+    });
+
+    if (transactions.length === 0) {
+      return NextResponse.json({ success: true, message: "Tidak ada transaksi yang perlu dihapus" });
+    }
+
     // Perform deletion and stock revert inside a transaction
     await prisma.$transaction(async (tx) => {
-      for (const singleId of ids) {
-        // Fetch transaction and its items
-        const transaction = await tx.transaction.findUnique({
-          where: { id: singleId },
-          include: {
-            items: {
-              include: {
-                product: true,
-              },
-            },
-          },
-        });
+      // 2. Soft delete the transactions in bulk
+      await tx.transaction.updateMany({
+        where: { id: { in: ids } },
+        data: { deletedAt: new Date() },
+      });
 
-        if (!transaction || transaction.deletedAt) {
-          continue;
-        }
+      // 3. Soft delete related revenues in bulk
+      await tx.revenue.updateMany({
+        where: { transactionId: { in: ids } },
+        data: { deletedAt: new Date() },
+      });
 
-        // Soft delete the transaction
-        await tx.transaction.update({
-          where: { id: singleId },
-          data: { deletedAt: new Date() },
-        });
+      // Gather all product IDs to fetch operational stock links in one query
+      const productIds = Array.from(
+        new Set(transactions.flatMap((t) => t.items.map((item) => item.productId)))
+      );
 
-        // Soft delete related revenue
-        await tx.revenue.updateMany({
-          where: { transactionId: singleId },
-          data: { deletedAt: new Date() },
-        });
+      const allOpStockLinks = productIds.length > 0 ? await tx.productOperationalStock.findMany({
+        where: { productId: { in: productIds } },
+      }) : [];
 
-        // Revert stocks for each item
+      // Collect all operational stock and main stock query params
+      const opStockQueries: { name: string; outletId: string }[] = [];
+      const stockQueries: { productId: string; outletId: string }[] = [];
+
+      for (const transaction of transactions) {
         for (const item of transaction.items) {
           const product = item.product;
-          const opStockLinks = await tx.productOperationalStock.findMany({
-            where: { productId: product.id },
-          });
+          const opLinks = allOpStockLinks.filter((link) => link.productId === product.id);
 
-          if (opStockLinks.length > 0) {
-            for (const link of opStockLinks) {
-              const deductionQty = item.quantity * (link.deductionQty || 1);
-              const opStock = await tx.operationalStock.findUnique({
-                where: {
-                  name_outletId: {
-                    name: link.operationalStockName,
-                    outletId: transaction.outletId,
-                  },
-                },
+          if (opLinks.length > 0) {
+            for (const link of opLinks) {
+              opStockQueries.push({
+                name: link.operationalStockName,
+                outletId: transaction.outletId,
               });
+            }
+          }
+
+          const hasLinks = !!product.linkedProductId || !!product.linkedProductId2;
+          if (hasLinks) {
+            if (product.linkedProductId) {
+              stockQueries.push({
+                productId: product.linkedProductId,
+                outletId: transaction.outletId,
+              });
+            }
+            if (product.linkedProductId2) {
+              stockQueries.push({
+                productId: product.linkedProductId2,
+                outletId: transaction.outletId,
+              });
+            }
+          } else if (opLinks.length === 0) {
+            stockQueries.push({
+              productId: product.id,
+              outletId: transaction.outletId,
+            });
+          }
+        }
+      }
+
+      // Query database for operational stocks and main stocks in bulk
+      const uniqueOpStockQueries = opStockQueries.filter(
+        (v, i, a) => a.findIndex((t) => t.name === v.name && t.outletId === v.outletId) === i
+      );
+      const uniqueStockQueries = stockQueries.filter(
+        (v, i, a) => a.findIndex((t) => t.productId === v.productId && t.outletId === v.outletId) === i
+      );
+
+      const dbOpStocks = uniqueOpStockQueries.length > 0 ? await tx.operationalStock.findMany({
+        where: { OR: uniqueOpStockQueries },
+      }) : [];
+
+      const dbStocks = uniqueStockQueries.length > 0 ? await tx.stock.findMany({
+        where: { OR: uniqueStockQueries },
+      }) : [];
+
+      // Maps to aggregate adjustments in memory:
+      // key: stockId/opStockId, value: accumulated quantity change
+      const opStockAdjustments: Record<string, number> = {};
+      const stockAdjustments: Record<string, number> = {};
+
+      const opStockMovementsToCreate: any[] = [];
+      const stockMovementsToCreate: any[] = [];
+
+      for (const transaction of transactions) {
+        for (const item of transaction.items) {
+          const product = item.product;
+          const opLinks = allOpStockLinks.filter((link) => link.productId === product.id);
+
+          if (opLinks.length > 0) {
+            for (const link of opLinks) {
+              const deductionQty = item.quantity * (link.deductionQty || 1);
+              const opStock = dbOpStocks.find(
+                (s) => s.name === link.operationalStockName && s.outletId === transaction.outletId
+              );
 
               if (opStock) {
-                // Revert quantity and stockOut counter
-                await tx.operationalStock.update({
-                  where: { id: opStock.id },
-                  data: {
-                    quantity: { increment: deductionQty },
-                    stockOut: { decrement: deductionQty },
-                  },
-                });
+                opStockAdjustments[opStock.id] = (opStockAdjustments[opStock.id] || 0) + deductionQty;
 
-                // Log operational stock movement for cancellation
-                await tx.operationalStockMovement.create({
-                  data: {
-                    operationalStockId: opStock.id,
-                    type: "IN",
-                    quantity: deductionQty,
-                    notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
-                    userId: user.id,
-                  },
+                opStockMovementsToCreate.push({
+                  operationalStockId: opStock.id,
+                  type: "IN",
+                  quantity: deductionQty,
+                  notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
+                  userId: user.id,
                 });
               }
             }
           }
 
-          // Revert product stock or linked product stock
           const hasLinks = !!product.linkedProductId || !!product.linkedProductId2;
-
           if (hasLinks) {
             if (product.linkedProductId) {
               const deductionQty1 = item.quantity * (product.stockDeductionQty || 1);
-              const stock1 = await tx.stock.findUnique({
-                where: {
-                  productId_outletId: {
-                    productId: product.linkedProductId,
-                    outletId: transaction.outletId,
-                  },
-                },
-              });
+              const stock1 = dbStocks.find(
+                (s) => s.productId === product.linkedProductId && s.outletId === transaction.outletId
+              );
+
               if (stock1) {
-                await tx.stock.update({
-                  where: { id: stock1.id },
-                  data: {
-                    quantity: { increment: deductionQty1 },
-                    sold: { decrement: deductionQty1 },
-                  },
-                });
-                await tx.stockMovement.create({
-                  data: {
-                    stockId: stock1.id,
-                    type: StockMovementType.IN,
-                    quantity: deductionQty1,
-                    notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
-                    userId: user.id,
-                  },
+                stockAdjustments[stock1.id] = (stockAdjustments[stock1.id] || 0) + deductionQty1;
+
+                stockMovementsToCreate.push({
+                  stockId: stock1.id,
+                  type: StockMovementType.IN,
+                  quantity: deductionQty1,
+                  notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
+                  userId: user.id,
                 });
               }
             }
 
             if (product.linkedProductId2) {
               const deductionQty2 = item.quantity * (product.stockDeductionQty2 || 1);
-              const stock2 = await tx.stock.findUnique({
-                where: {
-                  productId_outletId: {
-                    productId: product.linkedProductId2,
-                    outletId: transaction.outletId,
-                  },
-                },
-              });
+              const stock2 = dbStocks.find(
+                (s) => s.productId === product.linkedProductId2 && s.outletId === transaction.outletId
+              );
+
               if (stock2) {
-                await tx.stock.update({
-                  where: { id: stock2.id },
-                  data: {
-                    quantity: { increment: deductionQty2 },
-                    sold: { decrement: deductionQty2 },
-                  },
-                });
-                await tx.stockMovement.create({
-                  data: {
-                    stockId: stock2.id,
-                    type: StockMovementType.IN,
-                    quantity: deductionQty2,
-                    notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
-                    userId: user.id,
-                  },
+                stockAdjustments[stock2.id] = (stockAdjustments[stock2.id] || 0) + deductionQty2;
+
+                stockMovementsToCreate.push({
+                  stockId: stock2.id,
+                  type: StockMovementType.IN,
+                  quantity: deductionQty2,
+                  notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
+                  userId: user.id,
                 });
               }
             }
-          } else if (opStockLinks.length === 0) {
+          } else if (opLinks.length === 0) {
             const deductionQty = item.quantity;
-            const stock = await tx.stock.findUnique({
-              where: {
-                productId_outletId: {
-                  productId: product.id,
-                  outletId: transaction.outletId,
-                },
-              },
-            });
+            const stock = dbStocks.find(
+              (s) => s.productId === product.id && s.outletId === transaction.outletId
+            );
+
             if (stock) {
-              await tx.stock.update({
-                where: { id: stock.id },
-                data: {
-                  quantity: { increment: deductionQty },
-                  sold: { decrement: deductionQty },
-                },
-              });
-              await tx.stockMovement.create({
-                data: {
-                  stockId: stock.id,
-                  type: StockMovementType.IN,
-                  quantity: deductionQty,
-                  notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
-                  userId: user.id,
-                },
+              stockAdjustments[stock.id] = (stockAdjustments[stock.id] || 0) + deductionQty;
+
+              stockMovementsToCreate.push({
+                stockId: stock.id,
+                type: StockMovementType.IN,
+                quantity: deductionQty,
+                notes: `Pembatalan Penjualan ${transaction.invoiceNumber} (${product.name} x${item.quantity})`,
+                userId: user.id,
               });
             }
           }
         }
+      }
 
-        // Create Audit Log
-        await tx.auditLog.create({
+      // Execute aggregated updates for operational stocks
+      for (const [opStockId, qty] of Object.entries(opStockAdjustments)) {
+        await tx.operationalStock.update({
+          where: { id: opStockId },
           data: {
-            userId: user.id,
-            action: "DELETE",
-            table: "transactions",
-            recordId: singleId,
-            details: JSON.stringify({ invoiceNumber: transaction.invoiceNumber, total: transaction.total }),
+            quantity: { increment: qty },
+            stockOut: { decrement: qty },
           },
         });
       }
+
+      // Execute aggregated updates for main product stocks
+      for (const [stockId, qty] of Object.entries(stockAdjustments)) {
+        await tx.stock.update({
+          where: { id: stockId },
+          data: {
+            quantity: { increment: qty },
+            sold: { decrement: qty },
+          },
+        });
+      }
+
+      // Create all movements in bulk
+      if (opStockMovementsToCreate.length > 0) {
+        await tx.operationalStockMovement.createMany({
+          data: opStockMovementsToCreate,
+        });
+      }
+
+      if (stockMovementsToCreate.length > 0) {
+        await tx.stockMovement.createMany({
+          data: stockMovementsToCreate,
+        });
+      }
+
+      // Create Audit Logs in bulk
+      const auditLogs = transactions.map((t) => ({
+        userId: user.id,
+        action: "DELETE",
+        table: "transactions",
+        recordId: t.id,
+        details: JSON.stringify({ invoiceNumber: t.invoiceNumber, total: t.total }),
+      }));
+
+      await tx.auditLog.createMany({
+        data: auditLogs,
+      });
+
     }, { timeout: 30000 });
 
-    return NextResponse.json({ success: true, message: ids.length > 1 ? "Transaksi terpilih berhasil dibatalkan" : "Transaksi berhasil dibatalkan" });
+    return NextResponse.json({
+      success: true,
+      message: ids.length > 1 ? "Transaksi terpilih berhasil dibatalkan" : "Transaksi berhasil dibatalkan",
+    });
   } catch (error: any) {
     return NextResponse.json(
       { error: "Gagal menghapus transaksi: " + error.message },

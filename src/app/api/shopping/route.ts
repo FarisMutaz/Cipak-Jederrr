@@ -173,72 +173,96 @@ export async function DELETE(req: Request) {
   const ids = id.split(",");
 
   try {
+    // 1. Fetch all items first in a single query
+    const items = await prisma.shoppingList.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+    });
+
+    if (items.length === 0) {
+      return NextResponse.json({ success: true, message: "Tidak ada item belanja yang perlu dihapus" });
+    }
+
     await prisma.$transaction(async (tx) => {
-      for (const singleId of ids) {
-        // Find shopping list first
-        const item = await tx.shoppingList.findUnique({
-          where: { id: singleId },
-        });
+      // Gather all unique operationalStockIds to query in bulk
+      const opStockIds = Array.from(
+        new Set(items.map((item) => item.operationalStockId).filter(Boolean))
+      ) as string[];
 
-        if (!item || item.deletedAt) {
-          continue;
-        }
+      const dbOpStocks = opStockIds.length > 0 ? await tx.operationalStock.findMany({
+        where: { id: { in: opStockIds } },
+      }) : [];
 
-        // Soft delete shopping list
-        await tx.shoppingList.update({
-          where: { id: singleId },
-          data: { deletedAt: new Date() },
-        });
+      const opStockAdjustments: Record<string, number> = {};
+      const opStockMovementsToCreate: any[] = [];
 
-        // Soft delete linked expense
-        await tx.expense.updateMany({
-          where: { shoppingListId: singleId },
-          data: { deletedAt: new Date() },
-        });
-
-        // Reverse stock increment if linked to operationalStockId
+      for (const item of items) {
         if (item.operationalStockId && item.qty) {
-          const opStock = await tx.operationalStock.findUnique({
-            where: { id: item.operationalStockId },
-          });
+          const opStock = dbOpStocks.find((s) => s.id === item.operationalStockId);
           if (opStock) {
             const factor = opStock.qtyPerUnit || 1;
             const decrementedQty = item.qty * factor;
-            const nextQty = opStock.quantity - decrementedQty;
-            await tx.operationalStock.update({
-              where: { id: item.operationalStockId },
-              data: {
-                stockIn: { decrement: decrementedQty },
-                quantity: nextQty,
-              },
-            });
 
-            await tx.operationalStockMovement.create({
-              data: {
-                operationalStockId: item.operationalStockId,
-                type: "OUT",
-                quantity: decrementedQty,
-                notes: `Pembatalan/Penghapusan Pembelian: ${item.itemName} (${item.qty}x beli @ ${factor} ${opStock.unit})`,
-                userId: user.id,
-              },
+            opStockAdjustments[opStock.id] = (opStockAdjustments[opStock.id] || 0) + decrementedQty;
+
+            opStockMovementsToCreate.push({
+              operationalStockId: item.operationalStockId,
+              type: "OUT",
+              quantity: decrementedQty,
+              notes: `Pembatalan/Penghapusan Pembelian: ${item.itemName} (${item.qty}x beli @ ${factor} ${opStock.unit})`,
+              userId: user.id,
             });
           }
         }
+      }
 
-        // Audit log
-        await tx.auditLog.create({
+      // 2. Soft delete shopping list items in bulk
+      await tx.shoppingList.updateMany({
+        where: { id: { in: ids } },
+        data: { deletedAt: new Date() },
+      });
+
+      // 3. Soft delete linked expenses in bulk
+      await tx.expense.updateMany({
+        where: { shoppingListId: { in: ids } },
+        data: { deletedAt: new Date() },
+      });
+
+      // 4. Update operational stocks in aggregated manner
+      for (const [opStockId, decrementedQty] of Object.entries(opStockAdjustments)) {
+        await tx.operationalStock.update({
+          where: { id: opStockId },
           data: {
-            userId: user.id,
-            action: "DELETE",
-            table: "shopping_lists",
-            recordId: singleId,
-            details: JSON.stringify({ itemName: item.itemName, total: item.total }),
+            stockIn: { decrement: decrementedQty },
+            quantity: { decrement: decrementedQty },
           },
         });
       }
+
+      // 5. Create movements in bulk
+      if (opStockMovementsToCreate.length > 0) {
+        await tx.operationalStockMovement.createMany({
+          data: opStockMovementsToCreate,
+        });
+      }
+
+      // 6. Create Audit Logs in bulk
+      const auditLogs = items.map((item) => ({
+        userId: user.id,
+        action: "DELETE",
+        table: "shopping_lists",
+        recordId: item.id,
+        details: JSON.stringify({ itemName: item.itemName, total: item.total }),
+      }));
+
+      await tx.auditLog.createMany({
+        data: auditLogs,
+      });
     });
 
-    return NextResponse.json({ success: true, message: ids.length > 1 ? "Item belanja terpilih berhasil dihapus" : "Berhasil menghapus item belanja" });
+    return NextResponse.json({
+      success: true,
+      message: ids.length > 1 ? "Item belanja terpilih berhasil dihapus" : "Berhasil menghapus item belanja",
+    });
   } catch (error: any) {
     return NextResponse.json(
       { error: error.message || "Gagal menghapus item belanja" },
