@@ -52,6 +52,8 @@ model User {
   stockMovements       StockMovement[]
   operationalMovements OperationalStockMovement[]
   auditLogs            AuditLog[]
+  openedSessions       DailyReportSession[] @relation("OpenedSessions")
+  closedSessions       DailyReportSession[] @relation("ClosedSessions")
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   deletedAt    DateTime?
@@ -72,6 +74,7 @@ model Outlet {
   expenses          Expense[]
   revenues          Revenue[]
   reports           Report[]
+  reportSessions    DailyReportSession[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
@@ -338,4 +341,22 @@ model ProductOperationalStock {
   updatedAt             DateTime @updatedAt
 
   @@unique([productId, operationalStockName])
+}
+
+model DailyReportSession {
+  id          String    @id @default(uuid())
+  outletId    String
+  outlet      Outlet    @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  date        String    // Format: YYYY-MM-DD
+  status      String    @default("CLOSED") // OPEN, CLOSED
+  openedAt    DateTime?
+  openedById  String?
+  openedBy    User?     @relation("OpenedSessions", fields: [openedById], references: [id])
+  closedAt    DateTime?
+  closedById  String?
+  closedBy    User?     @relation("ClosedSessions", fields: [closedById], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([outletId, date])
 }

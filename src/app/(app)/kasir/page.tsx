@@ -108,10 +108,24 @@ export default function KasirPage() {
     enabled: !!activeOutlet,
   });
 
-  // Re-fetch products when activeOutlet changes
+  const todayStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Jakarta" });
+
+  const { data: sessionData, refetch: refetchSession } = useQuery({
+    queryKey: ["report-session-cashier", activeOutlet, todayStr],
+    queryFn: async () => {
+      if (!activeOutlet) return null;
+      const res = await fetch(`/api/laporan/session?outletId=${activeOutlet}&date=${todayStr}`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!activeOutlet,
+  });
+
+  // Re-fetch session data and products when activeOutlet changes
   useEffect(() => {
     if (activeOutlet) {
       refetchProds();
+      refetchSession();
       setCart([]); // Clear cart when switching outlet
     }
   }, [activeOutlet]);
@@ -203,6 +217,10 @@ export default function KasirPage() {
   });
 
   const handleCheckout = () => {
+    if (sessionData?.status !== "OPEN") {
+      triggerAlert("error", "Laporan outlet hari ini belum dibuka atau sudah ditutup.");
+      return;
+    }
     if (cart.length === 0) {
       triggerAlert("error", "Keranjang masih kosong");
       return;
@@ -302,26 +320,130 @@ export default function KasirPage() {
             />
           </div>
 
-          {/* Scoped Outlet dropdown */}
-          {userRole !== "KASIR" && (
-            <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 justify-end">
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-primary" /> Outlet:
-              </span>
-              <select
-                value={activeOutlet}
-                onChange={(e) => setActiveOutlet(e.target.value)}
-                className="px-3 py-1.5 bg-bg-custom border border-border-custom text-xs font-bold rounded-xl focus:outline-none focus:border-primary/50 text-text-custom"
-              >
-                {outletsToUse.map((o: any) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div className="flex items-center gap-4 flex-wrap w-full sm:w-auto justify-end">
+            {/* Session Indicator & Close Button */}
+            {sessionData && (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Laporan:</span>
+                {sessionData.status === "OPEN" ? (
+                  <>
+                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-extrabold rounded-lg border border-emerald-200">
+                      BUKA
+                    </span>
+                    <button
+                      onClick={async () => {
+                        if (!confirm("Apakah Anda yakin ingin menutup laporan hari ini? Setelah ditutup, transaksi tidak dapat dicatat.")) return;
+                        try {
+                          const res = await fetch("/api/laporan/session", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              outletId: activeOutlet,
+                              date: todayStr,
+                              action: "CLOSE",
+                            }),
+                          });
+                          if (res.ok) {
+                            refetchSession();
+                            triggerAlert("success", "Laporan hari ini berhasil ditutup!");
+                          } else {
+                            const err = await res.json();
+                            triggerAlert("error", err.error || "Gagal menutup laporan");
+                          }
+                        } catch (e) {
+                          triggerAlert("error", "Koneksi gagal");
+                        }
+                      }}
+                      className="text-[10px] font-bold text-red-600 hover:text-red-800 underline transition-colors cursor-pointer"
+                    >
+                      Tutup
+                    </button>
+                  </>
+                ) : (
+                  <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-extrabold rounded-lg border border-red-200">
+                    TUTUP
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Scoped Outlet dropdown */}
+            {userRole !== "KASIR" && (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-primary" /> Outlet:
+                </span>
+                <select
+                  value={activeOutlet}
+                  onChange={(e) => setActiveOutlet(e.target.value)}
+                  className="px-3 py-1.5 bg-bg-custom border border-border-custom text-xs font-bold rounded-xl focus:outline-none focus:border-primary/50 text-text-custom"
+                >
+                  {outletsToUse.map((o: any) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Warning Banners */}
+        {sessionData && sessionData.status !== "OPEN" && (
+          <div className={`p-4 rounded-xl border flex flex-col sm:flex-row justify-between items-center gap-3 shrink-0 no-print ${
+            sessionData.status === "CLOSED"
+              ? "bg-red-50 border-red-200 text-red-800"
+              : "bg-amber-50 border-amber-200 text-amber-800"
+          }`}>
+            <div className="flex items-center gap-3">
+              <AlertCircle className={`w-5 h-5 shrink-0 ${sessionData.status === "CLOSED" ? "text-red-600" : "text-amber-600"}`} />
+              <div className="text-left">
+                <p className="text-xs font-bold">
+                  {sessionData.status === "CLOSED"
+                    ? "Laporan Outlet Hari Ini Sudah Ditutup"
+                    : "Laporan Outlet Hari Ini Belum Dibuka"}
+                </p>
+                <p className="text-[10px] opacity-80 mt-0.5">
+                  {sessionData.status === "CLOSED"
+                    ? "Transaksi tidak dapat disimpan karena laporan hari ini sudah diakhiri."
+                    : "Silakan buka laporan terlebih dahulu sebelum mencatat transaksi."}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch("/api/laporan/session", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      outletId: activeOutlet,
+                      date: todayStr,
+                      action: "OPEN",
+                    }),
+                  });
+                  if (res.ok) {
+                    refetchSession();
+                    triggerAlert("success", "Laporan harian berhasil dibuka!");
+                  } else {
+                    const err = await res.json();
+                    triggerAlert("error", err.error || "Gagal membuka laporan");
+                  }
+                } catch (e) {
+                  triggerAlert("error", "Koneksi gagal");
+                }
+              }}
+              className={`px-4 py-2 text-white font-extrabold text-xs rounded-xl shadow-sm cursor-pointer transition-all active:scale-95 shrink-0 ${
+                sessionData.status === "CLOSED"
+                  ? "bg-red-600 hover:bg-red-700"
+                  : "bg-amber-600 hover:bg-amber-700"
+              }`}
+            >
+              {sessionData.status === "CLOSED" ? "Buka Kembali Laporan" : "Buka Laporan Hari Ini"}
+            </button>
+          </div>
+        )}
 
         {/* Category Tabs */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 shrink-0">
@@ -577,13 +699,18 @@ export default function KasirPage() {
           {/* Checkout Button */}
           <button
             onClick={handleCheckout}
-            disabled={cart.length === 0 || transactionMutation.isPending}
+            disabled={cart.length === 0 || transactionMutation.isPending || sessionData?.status !== "OPEN"}
             className="w-full py-3 bg-primary hover:bg-primary-dark text-white rounded-xl text-xs font-extrabold shadow-md shadow-primary/20 hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
             {transactionMutation.isPending ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <span>Menyimpan Transaksi...</span>
+              </>
+            ) : sessionData?.status !== "OPEN" ? (
+              <>
+                <AlertCircle className="w-4 h-4" />
+                <span>Laporan Belum Dibuka / Sudah Ditutup</span>
               </>
             ) : (
               <>

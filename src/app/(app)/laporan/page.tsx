@@ -133,6 +133,26 @@ export default function LaporanPage() {
           )}
         </div>
 
+        {/* Session Status Badge */}
+        {report && (
+          <div className="flex items-center gap-3 bg-bg-custom border border-border-custom px-3 py-1.5 rounded-xl shrink-0">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Status:</span>
+            {report.sessionInfo?.status === "OPEN" ? (
+              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-lg border border-emerald-200">
+                BUKA
+              </span>
+            ) : report.sessionInfo?.status === "CLOSED" ? (
+              <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-lg border border-red-200">
+                TUTUP
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-[10px] font-bold rounded-lg border border-gray-200">
+                BELUM DIBUKA
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Export Buttons */}
         <div className="flex gap-2">
           <button
@@ -416,6 +436,18 @@ export default function LaporanPage() {
                 <p className="mt-1 font-semibold text-gray-600">&nbsp;</p>
               </div>
             </div>
+
+            {/* Session Audit Metadata */}
+            {report.sessionInfo && (
+              <div className="flex justify-between items-center text-[9px] text-gray-500 mt-6 pt-2 border-t border-gray-200 w-full max-w-[650px] mx-auto italic">
+                <span>
+                  Buka: {report.sessionInfo.openedBy || "-"} {report.sessionInfo.openedAt ? `(${new Date(report.sessionInfo.openedAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })})` : ""}
+                </span>
+                <span>
+                  Tutup: {report.sessionInfo.closedBy || "-"} {report.sessionInfo.closedAt ? `(${new Date(report.sessionInfo.closedAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })})` : ""}
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>

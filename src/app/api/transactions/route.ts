@@ -32,6 +32,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Anda tidak memiliki akses ke outlet ini" }, { status: 403 });
     }
 
+    // Verify daily report session is open
+    const todayStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Jakarta" });
+    const reportSession = await prisma.dailyReportSession.findUnique({
+      where: {
+        outletId_date: {
+          outletId,
+          date: todayStr,
+        },
+      },
+    });
+
+    if (!reportSession || reportSession.status !== "OPEN") {
+      return NextResponse.json(
+        { error: "Laporan outlet hari ini belum dibuka atau sudah ditutup. Silakan buka laporan terlebih dahulu." },
+        { status: 400 }
+      );
+    }
+
     // Run transaction atomically
     const result = await prisma.$transaction(async (tx) => {
       // 1. Generate Invoice Number: TRX-DDMMYY-001

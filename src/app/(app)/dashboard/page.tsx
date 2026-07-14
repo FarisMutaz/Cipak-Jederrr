@@ -74,6 +74,47 @@ export default function DashboardPage() {
     }
   }, [activeOutletId, firstOutletToUseId, firstUserOutletId, userRole]);
 
+  const todayStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Jakarta" });
+  const [isUpdatingSession, setIsUpdatingSession] = useState(false);
+
+  const { data: sessionData, refetch: refetchSession } = useQuery({
+    queryKey: ["dashboard-report-session", selectedOutlet, todayStr],
+    queryFn: async () => {
+      if (!selectedOutlet || selectedOutlet === "ALL") return null;
+      const res = await fetch(`/api/laporan/session?outletId=${selectedOutlet}&date=${todayStr}`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!session && selectedOutlet !== "ALL",
+  });
+
+  const handleToggleSession = async (action: "OPEN" | "CLOSE") => {
+    if (!selectedOutlet || selectedOutlet === "ALL") return;
+    setIsUpdatingSession(true);
+    try {
+      const res = await fetch("/api/laporan/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          outletId: selectedOutlet,
+          date: todayStr,
+          action,
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        alert(errData.error || "Gagal mengubah status laporan");
+      } else {
+        refetchSession();
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Terjadi kesalahan koneksi");
+    } finally {
+      setIsUpdatingSession(false);
+    }
+  };
+
   // Fetch Dashboard data
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["dashboard", range, selectedOutlet],
@@ -87,7 +128,10 @@ export default function DashboardPage() {
 
   // Re-fetch when outlet or range changes
   useEffect(() => {
-    if (session) refetch();
+    if (session) {
+      refetch();
+      if (selectedOutlet !== "ALL") refetchSession();
+    }
   }, [range, selectedOutlet, session]);
 
   if (isLoading || !data) {
@@ -187,6 +231,56 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Daily Report Session Controls */}
+      {selectedOutlet !== "ALL" && sessionData && (
+        <div className="bg-white p-4 rounded-xl border border-border-custom shadow-sm flex flex-col sm:flex-row justify-between items-center gap-3">
+          <div className="flex items-center gap-3">
+            <Clock className="w-5 h-5 text-primary shrink-0" />
+            <div className="text-left">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block">
+                Sesi Laporan Hari Ini ({todayStr})
+              </span>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs font-semibold text-text-custom">Status:</span>
+                {sessionData.status === "OPEN" ? (
+                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-lg border border-emerald-200">
+                    BUKA
+                  </span>
+                ) : sessionData.status === "CLOSED" ? (
+                  <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-lg border border-red-200">
+                    TUTUP
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-[10px] font-bold rounded-lg border border-gray-200">
+                    BELUM DIBUKA
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            {sessionData.status === "OPEN" ? (
+              <button
+                disabled={isUpdatingSession}
+                onClick={() => handleToggleSession("CLOSE")}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-extrabold shadow-md shadow-red-600/20 hover:shadow-lg transition-all duration-200 cursor-pointer disabled:opacity-50"
+              >
+                {isUpdatingSession ? "Loading..." : "Tutup Laporan Hari Ini"}
+              </button>
+            ) : (
+              <button
+                disabled={isUpdatingSession}
+                onClick={() => handleToggleSession("OPEN")}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold shadow-md shadow-emerald-600/20 hover:shadow-lg transition-all duration-200 cursor-pointer disabled:opacity-50"
+              >
+                {isUpdatingSession ? "Loading..." : "Buka Laporan Hari Ini"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Row 1: KPI Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

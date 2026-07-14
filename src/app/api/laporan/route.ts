@@ -44,6 +44,28 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Outlet tidak ditemukan" }, { status: 404 });
     }
 
+    // Fetch Report Session Status
+    const reportSession = await prisma.dailyReportSession.findUnique({
+      where: {
+        outletId_date: {
+          outletId,
+          date: dateStr,
+        },
+      },
+      include: {
+        openedBy: { select: { name: true } },
+        closedBy: { select: { name: true } },
+      },
+    });
+
+    const sessionInfo = {
+      status: reportSession?.status || "NOT_OPENED",
+      openedAt: reportSession?.openedAt || null,
+      openedBy: reportSession?.openedBy?.name || null,
+      closedAt: reportSession?.closedAt || null,
+      closedBy: reportSession?.closedBy?.name || null,
+    };
+
     // 1. Fetch transactions today
     const transactions = await prisma.transaction.findMany({
       where: {
@@ -242,6 +264,7 @@ export async function GET(req: Request) {
       outletName: outlet.name,
       outletAddress: outlet.address,
       date: dateStr,
+      sessionInfo,
       cipakTable,
       addonTable,
       totals: {
