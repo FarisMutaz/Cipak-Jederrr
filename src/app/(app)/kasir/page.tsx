@@ -360,9 +360,40 @@ export default function KasirPage() {
                     </button>
                   </>
                 ) : (
-                  <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-extrabold rounded-lg border border-red-200">
-                    TUTUP
-                  </span>
+                  <>
+                    <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-extrabold rounded-lg border border-red-200">
+                      TUTUP
+                    </span>
+                    {(userRole === "OWNER" || userRole === "DEVELOPER") && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await fetch("/api/laporan/session", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                outletId: activeOutlet,
+                                date: todayStr,
+                                action: "OPEN",
+                              }),
+                            });
+                            if (res.ok) {
+                              refetchSession();
+                              triggerAlert("success", "Laporan harian berhasil dibuka kembali!");
+                            } else {
+                              const err = await res.json();
+                              triggerAlert("error", err.error || "Gagal membuka laporan");
+                            }
+                          } catch (e) {
+                            triggerAlert("error", "Koneksi gagal");
+                          }
+                        }}
+                        className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 underline transition-colors cursor-pointer ml-1"
+                      >
+                        Buka
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -411,7 +442,7 @@ export default function KasirPage() {
                 </p>
               </div>
             </div>
-            {sessionData.status !== "CLOSED" && (
+            {(sessionData.status !== "CLOSED" || userRole === "OWNER" || userRole === "DEVELOPER") && (
               <button
                 onClick={async () => {
                   try {
@@ -437,7 +468,7 @@ export default function KasirPage() {
                 }}
                 className="px-4 py-2 text-white font-extrabold text-xs rounded-xl shadow-sm cursor-pointer transition-all active:scale-95 shrink-0 bg-amber-600 hover:bg-amber-700"
               >
-                Buka Laporan Hari Ini
+                {sessionData.status === "CLOSED" ? "Buka Kembali Laporan Hari Ini" : "Buka Laporan Hari Ini"}
               </button>
             )}
           </div>

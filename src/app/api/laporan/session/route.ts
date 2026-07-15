@@ -85,10 +85,13 @@ export async function POST(req: Request) {
     if (action === "OPEN") {
       if (reportSession) {
         if (reportSession.status === "CLOSED") {
-          return NextResponse.json(
-            { error: "Laporan untuk hari ini sudah ditutup dan tidak dapat dibuka kembali." },
-            { status: 400 }
-          );
+          const isAllowedUser = user.role === "OWNER" || user.role === "DEVELOPER";
+          if (!isAllowedUser) {
+            return NextResponse.json(
+              { error: "Laporan untuk hari ini sudah ditutup dan tidak dapat dibuka kembali." },
+              { status: 400 }
+            );
+          }
         }
         if (reportSession.status === "OPEN") {
           return NextResponse.json(
