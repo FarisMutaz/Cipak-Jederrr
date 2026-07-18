@@ -143,6 +143,34 @@ export default function StokPage() {
     enabled: !!activeOutlet,
   });
 
+  // Selection state for bulk delete
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+
+  // Reset selection on active tab or active outlet changes
+  useEffect(() => {
+    setSelectedProductIds([]);
+  }, [activeOutlet, activeTab]);
+
+  const allShownProductIds = stocks.map((s: any) => s.product.id);
+  const isAllSelected = allShownProductIds.length > 0 && allShownProductIds.every((id: string) => selectedProductIds.includes(id));
+  const isSomeSelected = selectedProductIds.length > 0 && !isAllSelected;
+
+  const handleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedProductIds([]);
+    } else {
+      setSelectedProductIds(allShownProductIds);
+    }
+  };
+
+  const handleSelectProduct = (productId: string) => {
+    setSelectedProductIds((prev) =>
+      prev.includes(productId)
+        ? prev.filter((id) => id !== productId)
+        : [...prev, productId]
+    );
+  };
+
   // Query: Stock movements history
   const { data: movements = [], isLoading: isLoadingHistory, isError: isErrorHistory, error: errorHistory } = useQuery({
     queryKey: ["movements-history", activeOutlet],
@@ -253,6 +281,43 @@ export default function StokPage() {
     });
     if (ok) {
       deleteStockMutation.mutate(productId);
+    }
+  };
+
+  // Mutation: Bulk Delete products
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (productIds: string[]) => {
+      const res = await fetch("/api/products/bulk", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productIds }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Gagal menghapus produk terpilih");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      triggerAlert("success", data.message || "Produk terpilih berhasil dihapus!");
+      setSelectedProductIds([]);
+      queryClient.invalidateQueries({ queryKey: ["stocks-list"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (err: any) => {
+      triggerAlert("error", err.message);
+    },
+  });
+
+  const handleBulkDelete = async () => {
+    const ok = await confirm({
+      title: "Hapus Produk Terpilih",
+      message: `Apakah Anda yakin ingin menghapus ${selectedProductIds.length} item stok terpilih? Seluruh data stok dan riwayat mutasi terkait item tersebut akan dihapus dari pandangan.`,
+      confirmText: "Ya, Hapus Semua",
+      variant: "danger",
+    });
+    if (ok) {
+      bulkDeleteMutation.mutate(selectedProductIds);
     }
   };
 
@@ -503,6 +568,21 @@ export default function StokPage() {
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-border-custom text-gray-400 font-bold uppercase tracking-wider bg-bg-custom">
+                    {isOwnerOrDev && (
+                      <th className="py-3.5 px-3 text-center w-10">
+                        <input
+                          type="checkbox"
+                          checked={isAllSelected}
+                          ref={(input) => {
+                            if (input) {
+                              input.indeterminate = isSomeSelected;
+                            }
+                          }}
+                          onChange={handleSelectAll}
+                          className="rounded text-primary focus:ring-primary accent-primary cursor-pointer w-4 h-4"
+                        />
+                      </th>
+                    )}
                     <th className="py-3.5 px-3 text-center w-12">#</th>
                     <th className="py-3.5 px-4">Nama Produk</th>
                     <th className="py-3.5 px-4 text-center">Stok Awal</th>
@@ -518,11 +598,25 @@ export default function StokPage() {
                 <tbody>
                   {stocks.map((s: any, idx: number) => {
                     const isLow = s.quantity <= s.minStock;
+                    const isSelected = selectedProductIds.includes(s.product.id);
                     return (
                       <tr
                         key={s.id}
-                        className="border-b border-border-custom last:border-none hover:bg-bg-custom/30 transition-colors"
+                        className={cn(
+                          "border-b border-border-custom last:border-none transition-colors hover:bg-bg-custom/30",
+                          isSelected ? "bg-primary/5 hover:bg-primary/10" : ""
+                        )}
                       >
+                        {isOwnerOrDev && (
+                          <td className="py-3.5 px-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleSelectProduct(s.product.id)}
+                              className="rounded text-primary focus:ring-primary accent-primary cursor-pointer w-4 h-4"
+                            />
+                          </td>
+                        )}
                         <td className="py-3.5 px-3 text-center">
                           <span className="text-[10px] font-bold text-gray-400">{idx + 1}</span>
                         </td>
@@ -968,6 +1062,52 @@ export default function StokPage() {
               </form>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Bulk Action Bar */}
+      <AnimatePresence>
+        {isOwnerOrDev && selectedProductIds.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, x: "-50%" }}
+            animate={{ opacity: 1, y: 0, x: "-50%" }}
+            exit={{ opacity: 0, y: 50, x: "-50%" }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-white border border-border-custom rounded-2xl shadow-xl px-5 py-3.5 flex items-center gap-4 text-xs font-bold text-text-custom max-w-md w-[calc(100%-2rem)] md:w-auto"
+          >
+            <span className="flex items-center gap-1.5 text-gray-500 whitespace-nowrap">
+              <span className="inline-flex items-center justify-center w-5 h-5 bg-primary/10 text-primary rounded-full text-[10px] font-extrabold">
+                {selectedProductIds.length}
+              </span>
+              Item Terpilih
+            </span>
+
+            <div className="h-4 w-px bg-border-custom" />
+
+            <button
+              onClick={handleBulkDelete}
+              disabled={bulkDeleteMutation.isPending}
+              className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-xl text-[10px] font-extrabold transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {bulkDeleteMutation.isPending ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Menghapus...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Hapus Terpilih</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={() => setSelectedProductIds([])}
+              className="px-3 py-2 border border-border-custom hover:bg-gray-50 text-gray-500 rounded-xl text-[10px] font-bold transition-colors cursor-pointer"
+            >
+              Batal
+            </button>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
