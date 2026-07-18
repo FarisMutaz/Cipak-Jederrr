@@ -221,9 +221,8 @@ export default function DashboardPage() {
               <button
                 key={t.key}
                 onClick={() => setRange(t.key)}
-                className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all duration-200 cursor-pointer ${
-                  range === t.key ? "bg-primary text-white shadow-sm" : "text-gray-500 hover:text-text-custom"
-                }`}
+                className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all duration-200 cursor-pointer ${range === t.key ? "bg-primary text-white shadow-sm" : "text-gray-500 hover:text-text-custom"
+                  }`}
               >
                 {t.label}
               </button>
@@ -267,7 +266,7 @@ export default function DashboardPage() {
                 onClick={() => handleToggleSession("CLOSE")}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-extrabold shadow-md shadow-red-600/20 hover:shadow-lg transition-all duration-200 cursor-pointer disabled:opacity-50"
               >
-                {isUpdatingSession ? "Loading..." : "Tutup Laporan Hari Ini"}
+                {isUpdatingSession ? "Loading..." : "Tutup Toko Hari Ini"}
               </button>
             ) : sessionData.status === "CLOSED" ? (
               userRole === "OWNER" || userRole === "DEVELOPER" ? (
@@ -276,7 +275,7 @@ export default function DashboardPage() {
                   onClick={() => handleToggleSession("OPEN")}
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold shadow-md shadow-emerald-600/20 hover:shadow-lg transition-all duration-200 cursor-pointer disabled:opacity-50"
                 >
-                  {isUpdatingSession ? "Loading..." : "Buka Kembali Laporan Hari Ini"}
+                  {isUpdatingSession ? "Loading..." : "Buka Toko Kembali"}
                 </button>
               ) : (
                 <span className="px-3 py-1.5 bg-gray-100 text-gray-400 border border-gray-200 rounded-xl text-xs font-bold italic">
@@ -289,7 +288,7 @@ export default function DashboardPage() {
                 onClick={() => handleToggleSession("OPEN")}
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold shadow-md shadow-emerald-600/20 hover:shadow-lg transition-all duration-200 cursor-pointer disabled:opacity-50"
               >
-                {isUpdatingSession ? "Loading..." : "Buka Laporan Hari Ini"}
+                {isUpdatingSession ? "Loading..." : "Buka Toko Hari Ini"}
               </button>
             )}
           </div>
@@ -552,9 +551,8 @@ export default function DashboardPage() {
                       <p className="text-[10px] text-gray-400 mt-0.5">Stok: {item.stock}</p>
                     </div>
                   </div>
-                  <span className={`px-2 py-0.5 text-[9px] font-bold rounded ${
-                    item.level === "Habis" ? "bg-primary/10 text-primary" : "bg-accent/15 text-[#b3861b]"
-                  }`}>
+                  <span className={`px-2 py-0.5 text-[9px] font-bold rounded ${item.level === "Habis" ? "bg-primary/10 text-primary" : "bg-accent/15 text-[#b3861b]"
+                    }`}>
                     {item.level}
                   </span>
                 </div>
@@ -582,11 +580,10 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
                     <span className="font-bold text-text-custom">{formatRupiah(t.total)}</span>
-                    <span className={`px-1.5 py-0.5 text-[8px] font-bold rounded ${
-                      t.method === "CASH"
+                    <span className={`px-1.5 py-0.5 text-[8px] font-bold rounded ${t.method === "CASH"
                         ? "bg-[#F5C14E]/15 text-[#b3861b]"
                         : "bg-primary/10 text-primary"
-                    }`}>
+                      }`}>
                       {t.method}
                     </span>
                   </div>
@@ -639,9 +636,8 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0">
                   <span className="text-[9px] text-gray-400 font-medium">{cashier.shift}</span>
-                  <span className={`flex items-center gap-1 text-[9px] font-bold ${
-                    cashier.status === "Aktif" ? "text-emerald-500" : "text-gray-400"
-                  }`}>
+                  <span className={`flex items-center gap-1 text-[9px] font-bold ${cashier.status === "Aktif" ? "text-emerald-500" : "text-gray-400"
+                    }`}>
                     <CircleDot className="w-2 h-2 fill-current" /> {cashier.status}
                   </span>
                 </div>

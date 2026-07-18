@@ -16,19 +16,28 @@ export async function GET(req: Request) {
   }
 
   try {
-    const movements = await prisma.stockMovement.findMany({
+    // 1. Fetch active stocks for this outlet to get product mapping and valid stock IDs
+    const stocks = await prisma.stock.findMany({
       where: {
-        stock: {
-          outletId,
-          deletedAt: null,
-        },
+        outletId,
+        deletedAt: null,
       },
       include: {
-        stock: {
-          include: {
-            product: true,
-          },
-        },
+        product: true,
+      },
+    });
+
+    const stockIds = stocks.map((s) => s.id);
+    const stockMap = new Map(stocks.map((s) => [s.id, s.product]));
+
+    // 2. Fetch audit logs for these stocks (representing manual adjustments)
+    const logs = await prisma.auditLog.findMany({
+      where: {
+        table: "stocks",
+        action: "UPDATE",
+        recordId: { in: stockIds },
+      },
+      include: {
         user: {
           select: { name: true },
         },
@@ -39,16 +48,30 @@ export async function GET(req: Request) {
       take: 50,
     });
 
-    const formatted = movements.map((m) => ({
-      id: m.id,
-      productName: m.stock.product.name,
-      sku: m.stock.product.sku,
-      type: m.type, // IN, OUT, ADJUSTMENT
-      quantity: m.quantity,
-      notes: m.notes,
-      createdAt: m.createdAt,
-      userName: m.user?.name || "Sistem",
-    }));
+    // 3. Map audit logs to formatted output
+    const formatted = logs.map((log) => {
+      let details: any = {};
+      if (log.details && typeof log.details === "object") {
+        details = log.details;
+      } else if (log.details && typeof log.details === "string") {
+        try {
+          details = JSON.parse(log.details);
+        } catch (e) {}
+      }
+
+      const product = stockMap.get(log.recordId);
+
+      return {
+        id: log.id,
+        productName: product?.name || "Produk tidak diketahui",
+        sku: product?.sku || "",
+        type: details.type || "ADJUSTMENT",
+        quantity: details.logQty || 0,
+        notes: details.notes || "",
+        createdAt: log.createdAt,
+        userName: log.user?.name || "Sistem",
+      };
+    });
 
     return NextResponse.json(formatted);
   } catch (error: any) {
@@ -66,32 +89,61 @@ export async function DELETE(req: Request) {
   }
 
   const user = session.user as any;
-  if (user.role !== "DEVELOPER" && user.role !== "OWNER") {
+  if (user.role !== "DEVELOPER" && user.role !== "OWNER" && user.role !== "KOORLAP") {
     return NextResponse.json({ error: "Akses ditolak" }, { status: 403 });
   }
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
+  const batchId = searchParams.get("batchId");
 
-  if (!id) {
-    return NextResponse.json({ error: "Movement ID harus ditentukan" }, { status: 400 });
+  if (!id && !batchId) {
+    return NextResponse.json({ error: "Movement ID atau Batch ID harus ditentukan" }, { status: 400 });
   }
 
-  const ids = id.split(",");
-
   try {
-    // 1. Fetch all movements first in a single query
-    const movements = await prisma.stockMovement.findMany({
-      where: { id: { in: ids } },
-      include: { stock: true },
-    });
+    let logs = [];
+    if (batchId) {
+      // Find all stock update logs for this batch
+      const updateLogs = await prisma.auditLog.findMany({
+        where: {
+          table: "stocks",
+          action: "UPDATE",
+          details: {
+            path: ["batchId"],
+            equals: batchId,
+          },
+        },
+      });
 
-    if (movements.length === 0) {
+      // Also find the main SAVE_STOCK_ADJUSTMENT log
+      const runLog = await prisma.auditLog.findFirst({
+        where: {
+          action: "SAVE_STOCK_ADJUSTMENT",
+          recordId: batchId,
+        },
+      });
+
+      logs = [...updateLogs];
+      if (runLog) {
+        logs.push(runLog);
+      }
+    } else {
+      const ids = id!.split(",");
+      logs = await prisma.auditLog.findMany({
+        where: {
+          id: { in: ids },
+          table: "stocks",
+        },
+      });
+    }
+
+    if (logs.length === 0) {
       return NextResponse.json({ success: true, message: "Tidak ada riwayat mutasi yang perlu dihapus" });
     }
 
     await prisma.$transaction(async (tx) => {
-      // Aggregate stock adjustments in memory
+      // Aggregate stock adjustments in memory to run minimal DB updates
       const stockAdjustments: Record<
         string,
         {
@@ -103,13 +155,28 @@ export async function DELETE(req: Request) {
         }
       > = {};
 
-      for (const m of movements) {
-        const stock = m.stock;
-        if (!stock) continue;
+      for (const log of logs) {
+        if (log.action === "SAVE_STOCK_ADJUSTMENT") {
+          continue; // Skip processing reversion for the run log itself
+        }
+        const stockId = log.recordId;
+        let details: any = {};
+        if (log.details && typeof log.details === "object") {
+          details = log.details;
+        } else if (log.details && typeof log.details === "string") {
+          try {
+            details = JSON.parse(log.details);
+          } catch (e) {}
+        }
 
-        if (!stockAdjustments[stock.id]) {
-          stockAdjustments[stock.id] = {
-            id: stock.id,
+        const logQty = details.logQty || 0;
+        const type = details.type;
+        const oldQty = details.oldQty || 0;
+        const nextQty = details.nextQty || 0;
+
+        if (!stockAdjustments[stockId]) {
+          stockAdjustments[stockId] = {
+            id: stockId,
             initialStockDelta: 0,
             stockInDelta: 0,
             stockOutDelta: 0,
@@ -117,17 +184,19 @@ export async function DELETE(req: Request) {
           };
         }
 
-        const adj = stockAdjustments[stock.id];
+        const adj = stockAdjustments[stockId];
 
-        if (m.type === "IN") {
-          adj.stockInDelta -= m.quantity;
-          adj.quantityDelta -= m.quantity;
-        } else if (m.type === "OUT") {
-          adj.stockOutDelta -= m.quantity;
-          adj.quantityDelta += m.quantity;
-        } else if (m.type === "ADJUSTMENT") {
-          adj.initialStockDelta -= m.quantity;
-          adj.quantityDelta -= m.quantity;
+        // Quantity delta is ALWAYS: oldQty - nextQty (reverting it back to the state before adjustment)
+        adj.quantityDelta += (oldQty - nextQty);
+
+        if (type === "IN") {
+          adj.stockInDelta -= logQty;
+        } else if (type === "OUT") {
+          adj.stockOutDelta -= logQty;
+        } else if (type === "INITIAL") {
+          const oldInitialStock = details.oldInitialStock || 0;
+          const nextInitialStock = details.nextInitialStock || 0;
+          adj.initialStockDelta += (oldInitialStock - nextInitialStock);
         }
       }
 
@@ -144,14 +213,17 @@ export async function DELETE(req: Request) {
         });
       }
 
-      // 2. Delete all movements in bulk
-      await tx.stockMovement.deleteMany({
-        where: { id: { in: ids } },
+      // 2. Delete audit logs in bulk
+      const idsToDelete = logs.map((log) => log.id);
+      await tx.auditLog.deleteMany({
+        where: { id: { in: idsToDelete } },
       });
     });
 
     return NextResponse.json({
-      message: ids.length > 1
+      message: batchId
+        ? "Riwayat input stok berhasil dihapus & stok telah disesuaikan!"
+        : logs.length > 1
         ? "Riwayat mutasi terpilih berhasil dihapus & stok telah disesuaikan!"
         : "Riwayat mutasi berhasil dihapus & stok telah disesuaikan!",
     });

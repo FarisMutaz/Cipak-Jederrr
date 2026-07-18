@@ -369,7 +369,6 @@ export default function StokPage() {
       title: "Reset Semua Stok Produk",
       message: "Apakah Anda yakin ingin me-reset seluruh stok produk (stok awal, masuk, keluar, terjual, dan sisa) di outlet ini menjadi 0? Seluruh riwayat mutasi di outlet ini juga akan dihapus secara permanen.",
       confirmText: "Ya, Reset Semua",
-      confirmButtonClass: "bg-[#E84E4E] hover:bg-[#D33D3D] text-white",
       variant: "danger",
     });
     if (ok && activeOutlet) {

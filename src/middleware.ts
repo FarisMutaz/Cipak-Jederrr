@@ -67,7 +67,7 @@ export default auth((req) => {
     return NextResponse.redirect(new URL("/dashboard", nextUrl));
   }
 
-  if (pathname.startsWith("/input-stok") && userRole !== "DEVELOPER" && userRole !== "OWNER") {
+  if (pathname.startsWith("/distribusi-stok") && userRole !== "DEVELOPER" && userRole !== "OWNER" && userRole !== "KOORLAP") {
     return NextResponse.redirect(new URL("/dashboard", nextUrl));
   }
 

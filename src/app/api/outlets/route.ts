@@ -82,6 +82,32 @@ export async function POST(req: Request) {
         },
       });
 
+      // Initialize stock records for this new outlet for all active independent products
+      const activeProducts = await tx.product.findMany({
+        where: {
+          deletedAt: null,
+          status: "ACTIVE",
+          linkedProductId: null,
+          linkedProductId2: null,
+          operationalStocks: {
+            none: {},
+          },
+        },
+        select: { id: true },
+      });
+
+      if (activeProducts.length > 0) {
+        await tx.stock.createMany({
+          data: activeProducts.map((p) => ({
+            productId: p.id,
+            outletId: newOutlet.id,
+            initialStock: 0,
+            quantity: 0,
+            minStock: 5,
+          })),
+        });
+      }
+
       // Log Audit
       await tx.auditLog.create({
         data: {

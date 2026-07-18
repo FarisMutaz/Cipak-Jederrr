@@ -6,6 +6,27 @@ import { authConfig } from "./auth.config";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
+  callbacks: {
+    ...authConfig.callbacks,
+    async signIn({ user }) {
+      if (user && user.id) {
+        try {
+          await prisma.auditLog.create({
+            data: {
+              userId: user.id,
+              action: "LOGIN",
+              table: "users",
+              recordId: user.id,
+              details: JSON.stringify({ username: (user as any).username || user.email }),
+            },
+          });
+        } catch (err) {
+          console.error("Failed to log login audit:", err);
+        }
+      }
+      return true;
+    },
+  },
   providers: [
     CredentialsProvider({
       name: "Credentials",

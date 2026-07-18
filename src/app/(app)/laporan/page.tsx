@@ -36,7 +36,8 @@ export default function LaporanPage() {
     : userOutlets;
 
   const [activeOutlet, setActiveOutlet] = useState<string>("");
-  const [reportDate, setReportDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [startDate, setStartDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [endDate, setEndDate] = useState<string>(new Date().toISOString().split("T")[0]);
 
   const firstUserOutletId = userOutlets[0]?.id;
   const firstOutletToUseId = outletsToUse[0]?.id;
@@ -54,20 +55,20 @@ export default function LaporanPage() {
 
   // Query: Daily Report details
   const { data: report, isLoading, refetch } = useQuery({
-    queryKey: ["daily-report", activeOutlet, reportDate],
+    queryKey: ["daily-report", activeOutlet, startDate, endDate],
     queryFn: async () => {
-      const res = await fetch(`/api/laporan?outletId=${activeOutlet}&date=${reportDate}`);
+      const res = await fetch(`/api/laporan?outletId=${activeOutlet}&startDate=${startDate}&endDate=${endDate}`);
       if (!res.ok) throw new Error("Gagal memuat laporan harian");
       return res.json();
     },
-    enabled: !!activeOutlet && !!reportDate,
+    enabled: !!activeOutlet && !!startDate && !!endDate,
   });
 
   useEffect(() => {
-    if (activeOutlet && reportDate) {
+    if (activeOutlet && startDate && endDate) {
       refetch();
     }
-  }, [activeOutlet, reportDate]);
+  }, [activeOutlet, startDate, endDate]);
 
   const [isExporting, setIsExporting] = useState(false);
 
@@ -88,7 +89,8 @@ export default function LaporanPage() {
       const dataUrl = canvas.toDataURL(mimeType, 1.0);
 
       const link = document.createElement("a");
-      link.download = `Laporan_${report.outletName || "Outlet"}_${reportDate}.${fileExtension}`;
+      const dateSuffix = startDate === endDate ? startDate : `${startDate}_to_${endDate}`;
+      link.download = `Laporan_${report.outletName || "Outlet"}_${dateSuffix}.${fileExtension}`;
       link.href = dataUrl;
       link.click();
     } catch (err) {
@@ -104,14 +106,25 @@ export default function LaporanPage() {
       <div className="bg-white p-4 rounded-xl border border-border-custom shadow-sm flex flex-col md:flex-row justify-between items-center gap-4 no-print">
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
           {/* Date Selector */}
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Pilih Hari:</span>
-            <input
-              type="date"
-              value={reportDate}
-              onChange={(e) => setReportDate(e.target.value)}
-              className="px-3 py-1.5 bg-bg-custom border border-border-custom rounded-xl text-xs focus:outline-none focus:border-primary/50 text-text-custom font-semibold"
-            />
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Mulai:</span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="px-3 py-1.5 bg-bg-custom border border-border-custom rounded-xl text-xs focus:outline-none focus:border-primary/50 text-text-custom font-semibold"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Selesai:</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="px-3 py-1.5 bg-bg-custom border border-border-custom rounded-xl text-xs focus:outline-none focus:border-primary/50 text-text-custom font-semibold"
+              />
+            </div>
           </div>
 
           {/* Outlet Selector */}
@@ -123,6 +136,9 @@ export default function LaporanPage() {
                 onChange={(e) => setActiveOutlet(e.target.value)}
                 className="px-3 py-1.5 bg-bg-custom border border-border-custom text-xs font-bold rounded-xl focus:outline-none focus:border-primary/50 text-text-custom"
               >
+                {(userRole === "DEVELOPER" || userRole === "OWNER") && (
+                  <option value="ALL">Semua Outlet</option>
+                )}
                 {outletsToUse.map((o: any) => (
                   <option key={o.id} value={o.id}>
                     {o.name}
@@ -134,7 +150,7 @@ export default function LaporanPage() {
         </div>
 
         {/* Session Status Badge */}
-        {report && (
+        {report && activeOutlet !== "ALL" && startDate === endDate && (
           <div className="flex items-center gap-3 bg-bg-custom border border-border-custom px-3 py-1.5 rounded-xl shrink-0">
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Status:</span>
             {report.sessionInfo?.status === "OPEN" ? (
@@ -197,8 +213,10 @@ export default function LaporanPage() {
                 </span>
               </div>
               <div className="text-right">
-                <span className="font-bold text-xs text-gray-700">
-                  {formatDayDate(reportDate)}
+                <span className="font-bold text-xs text-gray-700 text-[10px]">
+                  {startDate === endDate 
+                    ? formatDayDate(startDate) 
+                    : `${formatDayDate(startDate)} - ${formatDayDate(endDate)}`}
                 </span>
               </div>
             </div>
@@ -419,26 +437,28 @@ export default function LaporanPage() {
             </div>
 
             {/* Signatures for physical approval */}
-            <div className="grid grid-cols-3 gap-4 text-center text-[10px] mt-8 pt-4 border-t border-dashed border-gray-300 signatures w-full max-w-[650px] mx-auto">
-              <div>
-                <p className="text-gray-400 mb-10">Disiapkan Oleh (Kasir)</p>
-                <div className="w-10/12 border-b border-black mx-auto"></div>
-                <p className="mt-1 font-semibold text-gray-600">{user.name}</p>
+            {activeOutlet !== "ALL" && startDate === endDate && (
+              <div className="grid grid-cols-3 gap-4 text-center text-[10px] mt-8 pt-4 border-t border-dashed border-gray-300 signatures w-full max-w-[650px] mx-auto">
+                <div>
+                  <p className="text-gray-400 mb-10">Disiapkan Oleh (Kasir)</p>
+                  <div className="w-10/12 border-b border-black mx-auto"></div>
+                  <p className="mt-1 font-semibold text-gray-600">{user.name}</p>
+                </div>
+                <div>
+                  <p className="text-gray-400 mb-10">Diverifikasi Oleh (Koorlap)</p>
+                  <div className="w-10/12 border-b border-black mx-auto"></div>
+                  <p className="mt-1 font-semibold text-gray-600">&nbsp;</p>
+                </div>
+                <div>
+                  <p className="text-gray-400 mb-10">Disetujui Oleh (Owner)</p>
+                  <div className="w-10/12 border-b border-black mx-auto"></div>
+                  <p className="mt-1 font-semibold text-gray-600">&nbsp;</p>
+                </div>
               </div>
-              <div>
-                <p className="text-gray-400 mb-10">Diverifikasi Oleh (Koorlap)</p>
-                <div className="w-10/12 border-b border-black mx-auto"></div>
-                <p className="mt-1 font-semibold text-gray-600">&nbsp;</p>
-              </div>
-              <div>
-                <p className="text-gray-400 mb-10">Disetujui Oleh (Owner)</p>
-                <div className="w-10/12 border-b border-black mx-auto"></div>
-                <p className="mt-1 font-semibold text-gray-600">&nbsp;</p>
-              </div>
-            </div>
+            )}
 
             {/* Session Audit Metadata */}
-            {report.sessionInfo && (
+            {activeOutlet !== "ALL" && startDate === endDate && report.sessionInfo && (
               <div className="flex justify-between items-center text-[9px] text-gray-500 mt-6 pt-2 border-t border-gray-200 w-full max-w-[650px] mx-auto italic">
                 <span>
                   Buka: {report.sessionInfo.openedBy || "-"} {report.sessionInfo.openedAt ? `(${new Date(report.sessionInfo.openedAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })})` : ""}

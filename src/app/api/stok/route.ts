@@ -28,6 +28,47 @@ export async function GET(req: Request) {
   }
 
   try {
+    // Self-healing: Ensure all active independent products have stock records in this outlet
+    const activeProducts = await prisma.product.findMany({
+      where: {
+        deletedAt: null,
+        status: "ACTIVE",
+        linkedProductId: null,
+        linkedProductId2: null,
+        operationalStocks: {
+          none: {},
+        },
+      },
+      select: { id: true },
+    });
+
+    const existingStocks = await prisma.stock.findMany({
+      where: {
+        outletId,
+        deletedAt: null,
+      },
+      select: { productId: true },
+    });
+
+    const existingProductIds = new Set(existingStocks.map((s) => s.productId));
+    const missingProducts = activeProducts.filter((p) => !existingProductIds.has(p.id));
+
+    if (missingProducts.length > 0) {
+      await prisma.$transaction(
+        missingProducts.map((p) =>
+          prisma.stock.create({
+            data: {
+              productId: p.id,
+              outletId,
+              initialStock: 0,
+              quantity: 0,
+              minStock: 5,
+            },
+          })
+        )
+      );
+    }
+
     const stocks = await prisma.stock.findMany({
       where: {
         outletId,

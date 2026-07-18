@@ -168,7 +168,14 @@ export default function Header({ onMenuToggle }: { onMenuToggle?: () => void }) 
                   <p className="text-[9px] text-gray-500 truncate">@{user?.username || user?.email}</p>
                 </div>
                 <button
-                  onClick={() => signOut({ callbackUrl: "/login" })}
+                  onClick={async () => {
+                    try {
+                      await fetch("/api/auth/logout-log", { method: "POST" });
+                    } catch (err) {
+                      console.error("Failed to log logout:", err);
+                    }
+                    signOut({ callbackUrl: "/login" });
+                  }}
                   className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-primary font-semibold hover:bg-primary/5 transition-colors cursor-pointer text-left"
                 >
                   <LogOut className="w-4 h-4" />

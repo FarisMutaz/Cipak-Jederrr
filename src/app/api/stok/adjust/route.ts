@@ -10,83 +10,135 @@ export async function POST(req: Request) {
   }
 
   const user = session.user as any;
-  if (user.role !== "DEVELOPER" && user.role !== "OWNER") {
+  if (user.role !== "DEVELOPER" && user.role !== "OWNER" && user.role !== "KOORLAP") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   try {
     const body = await req.json();
-    const { stockId, type, qty, notes } = body; // type: 'IN' | 'OUT' | 'OPNAME'
+    const { stockId, type, qty, notes, adjustments, notes: batchNotes } = body; // type: 'IN' | 'OUT' | 'OPNAME'
 
-    if (!stockId || !type || qty === undefined) {
+    if (!adjustments && (!stockId || !type || qty === undefined)) {
       return NextResponse.json({ error: "Data penyesuaian stok tidak lengkap" }, { status: 400 });
     }
 
-    const adjustQty = parseInt(qty);
+    const items = adjustments || [{ stockId, type, qty, notes }];
 
     const result = await prisma.$transaction(async (tx) => {
-      const stock = await tx.stock.findUnique({
-        where: { id: stockId },
-        include: { product: true },
-      });
+      const results = [];
+      const batchId = "batch_" + Date.now() + "_" + Math.random().toString(36).substring(2, 11);
 
-      if (!stock) {
-        throw new Error("Stok tidak ditemukan");
+      const outletsMap = new Map();
+      const productMap = new Map();
+
+      for (const item of items) {
+        const { stockId: sId, type: t, qty: q, notes: n } = item;
+        const adjustQty = parseInt(q);
+
+        // Skip 0 adjustments in batch
+        if (adjustments && adjustQty === 0) continue;
+
+        const stock = await tx.stock.findUnique({
+          where: { id: sId },
+          include: { product: true, outlet: true },
+        });
+
+        if (!stock) {
+          throw new Error("Stok tidak ditemukan");
+        }
+
+        let nextQty = stock.quantity;
+        let logQty = adjustQty;
+
+        if (t === "INITIAL") {
+          const diff = adjustQty - stock.initialStock;
+          nextQty = stock.quantity + diff;
+          logQty = Math.abs(diff);
+          await tx.stock.update({
+            where: { id: sId },
+            data: {
+              initialStock: adjustQty,
+              quantity: nextQty,
+            },
+          });
+        } else if (t === "IN") {
+          nextQty += adjustQty;
+          await tx.stock.update({
+            where: { id: sId },
+            data: {
+              quantity: nextQty,
+              stockIn: { increment: adjustQty },
+            },
+          });
+        } else if (t === "OUT") {
+          nextQty -= adjustQty;
+          await tx.stock.update({
+            where: { id: sId },
+            data: {
+              quantity: nextQty,
+              stockOut: { increment: adjustQty },
+            },
+          });
+        }
+
+        // Audit log
+        await tx.auditLog.create({
+          data: {
+            userId: user.id,
+            action: "UPDATE",
+            table: "stocks",
+            recordId: sId,
+            details: JSON.stringify({
+              type: t,
+              oldQty: stock.quantity,
+              nextQty,
+              logQty,
+              notes: n,
+              batchId,
+              oldInitialStock: t === "INITIAL" ? stock.initialStock : undefined,
+              nextInitialStock: t === "INITIAL" ? adjustQty : undefined,
+            }),
+          },
+        });
+
+        // Grouping for the run details
+        outletsMap.set(stock.outlet.id, stock.outlet.name);
+        if (!productMap.has(stock.productId)) {
+          productMap.set(stock.productId, {
+            productId: stock.productId,
+            productName: stock.product.name,
+            sku: stock.product.sku,
+            outlets: {},
+            notes: n,
+          });
+        }
+        productMap.get(stock.productId).outlets[stock.outletId] = adjustQty;
+
+        results.push({ stockId: sId, nextQty });
       }
 
-      let nextQty = stock.quantity;
-      let mType: StockMovementType = StockMovementType.ADJUSTMENT;
-      let logQty = adjustQty;
+      if (results.length > 0) {
+        const uniqueOutlets = Array.from(outletsMap.entries()).map(([id, name]) => ({ id, name }));
+        const groupAdjustments = Array.from(productMap.values());
 
-      if (type === "INITIAL") {
-        const diff = adjustQty - stock.initialStock;
-        nextQty = stock.quantity + diff;
-        mType = StockMovementType.ADJUSTMENT;
-        logQty = Math.abs(diff);
-        await tx.stock.update({
-          where: { id: stockId },
+        await tx.auditLog.create({
           data: {
-            initialStock: adjustQty,
-            quantity: nextQty,
-          },
-        });
-      } else if (type === "IN") {
-        nextQty += adjustQty;
-        mType = StockMovementType.IN;
-        await tx.stock.update({
-          where: { id: stockId },
-          data: {
-            quantity: nextQty,
-            stockIn: { increment: adjustQty },
-          },
-        });
-      } else if (type === "OUT") {
-        nextQty -= adjustQty;
-        mType = StockMovementType.OUT;
-        await tx.stock.update({
-          where: { id: stockId },
-          data: {
-            quantity: nextQty,
-            stockOut: { increment: adjustQty },
+            userId: user.id,
+            action: "SAVE_STOCK_ADJUSTMENT",
+            table: "stocks",
+            recordId: batchId,
+            details: JSON.stringify({
+              adjustments: groupAdjustments,
+              outlets: uniqueOutlets,
+              notes: batchNotes || notes || "Stok Tambahan",
+            }),
           },
         });
       }
 
-      // Per user request, manual stock adjustments are not recorded in the Stock Movement log/history
-      const movement = null;
-
-      // Audit log
-      await tx.auditLog.create({
-        data: {
-          userId: user.id,
-          action: "UPDATE",
-          table: "stocks",
-          recordId: stockId,
-          details: JSON.stringify({ type, oldQty: stock.quantity, nextQty, logQty }),
-        },
-      });
-
-      return { movement, nextQty };
+      return { success: true, results };
+    }, {
+      timeout: 15000,
     });
 
     return NextResponse.json(result);
